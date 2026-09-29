@@ -1,0 +1,43 @@
+# Provisioned for Grafana sidecar (adjust label to match your Grafana sidecar config).
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: otel-poc-datasources
+  namespace: otel-poc-observability
+  labels:
+    grafana_datasource: "1"
+data:
+  otel-poc-datasources.yaml: |
+    apiVersion: 1
+    datasources:
+      - name: Tempo-POC
+        type: tempo
+        access: proxy
+        url: http://tempo.otel-poc-observability.svc:3200
+        uid: tempo-poc
+        jsonData:
+          tracesToLogsV2:
+            datasourceUid: loki-poc
+            spanStartTimeShift: "-1h"
+            spanEndTimeShift: "1h"
+            filterByTraceID: true
+          tracesToMetrics:
+            datasourceUid: prometheus
+          serviceMap:
+            datasourceUid: prometheus
+          nodeGraph:
+            enabled: true
+          lokiSearch:
+            datasourceUid: loki-poc
+      - name: Loki-POC
+        type: loki
+        access: proxy
+        url: http://loki.otel-poc-observability.svc:3100
+        uid: loki-poc
+        jsonData:
+          derivedFields:
+            - datasourceUid: tempo-poc
+              matcherRegex: "trace_id=(\\w+)"
+              name: TraceID
+              url: "$${__value.raw}"
+              urlDisplayLabel: View Trace

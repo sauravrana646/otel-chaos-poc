@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: otel-chaos-poc
+  namespace: argocd
+spec:
+  description: OrbStack OTel + CloudNativePG chaos POC
+  sourceRepos:
+    - https://github.com/sauravrana646/otel-chaos-poc.git
+    - https://github.com/sauravrana646/otel-chaos-poc
+    - '*'
+  destinations:
+    - namespace: otel-poc-system
+      server: https://kubernetes.default.svc
+    - namespace: otel-poc-cnpg-system
+      server: https://kubernetes.default.svc
+    - namespace: otel-poc-observability
+      server: https://kubernetes.default.svc
+    - namespace: otel-poc-apps
+      server: https://kubernetes.default.svc
+    - namespace: otel-poc-tests
+      server: https://kubernetes.default.svc
+    - namespace: argocd
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: '*'
+      kind: '*'
+  namespaceResourceWhitelist:
+    - group: '*'
+      kind: '*'

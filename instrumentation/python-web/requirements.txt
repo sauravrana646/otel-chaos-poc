@@ -1,0 +1,9 @@
+# Starting pins — validate on ARM64 during Phase A and lock digests in compatibility.lock.yaml
+opentelemetry-distro==0.51b0
+opentelemetry-exporter-otlp==1.30.0
+opentelemetry-instrumentation-fastapi==0.51b0
+opentelemetry-instrumentation-asgi==0.51b0
+opentelemetry-instrumentation-httpx==0.51b0
+opentelemetry-instrumentation-psycopg==0.51b0
+opentelemetry-instrumentation-logging==0.51b0
+opentelemetry-instrumentation==0.51b0

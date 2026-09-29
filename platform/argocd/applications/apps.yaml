@@ -1,0 +1,183 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-namespaces
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "10"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/namespaces
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-cnpg-operator
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "30"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    targetRevision: 0.26.0
+    helm:
+      valuesObject:
+        crds:
+          create: true
+        monitoring:
+          podMonitorEnabled: false
+          grafanaDashboard:
+            create: false
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-cnpg-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-otel-operator
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "30"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-operator
+    targetRevision: 0.86.0
+    helm:
+      valuesObject:
+        manager:
+          collectorImage:
+            repository: otel/opentelemetry-collector-k8s
+        admissionWebhooks:
+          namespaceSelector:
+            matchLabels:
+              otel-injection: enabled
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-system
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+      - ServerSideApply=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-observability
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "40"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/observability
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-observability
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-instrumentation
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "50"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/otel/instrumentation
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-apps
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-cnpg-cluster
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "50"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/cnpg
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-apps
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-apps
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "70"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-apps
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-toxiproxy
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "60"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/toxiproxy
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-apps
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-dashboards
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "80"
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/dashboards
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-observability

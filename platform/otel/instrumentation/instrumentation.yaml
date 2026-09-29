@@ -1,0 +1,70 @@
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: java
+  namespace: otel-poc-apps
+spec:
+  exporter:
+    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+  propagators:
+    - tracecontext
+    - baggage
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  env:
+    - name: OTEL_SERVICE_NAMESPACE
+      value: otel-poc-apps
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: deployment.environment=poc
+  java:
+    image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:2.13.1
+---
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: python-web
+  namespace: otel-poc-apps
+spec:
+  exporter:
+    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+  propagators:
+    - tracecontext
+    - baggage
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  env:
+    - name: OTEL_SERVICE_NAMESPACE
+      value: otel-poc-apps
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: deployment.environment=poc
+    - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+      value: "true"
+  python:
+    # Built locally by ./cli/poc build — replace tag after first build
+    image: otel-poc/python-instrumentation-web:dev
+---
+apiVersion: opentelemetry.io/v1alpha1
+kind: Instrumentation
+metadata:
+  name: python-genai
+  namespace: otel-poc-apps
+spec:
+  exporter:
+    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+  propagators:
+    - tracecontext
+    - baggage
+  sampler:
+    type: parentbased_traceidratio
+    argument: "1.0"
+  env:
+    - name: OTEL_SERVICE_NAMESPACE
+      value: otel-poc-apps
+    - name: OTEL_RESOURCE_ATTRIBUTES
+      value: deployment.environment=poc
+    - name: OTEL_PYTHON_LOGGING_AUTO_INSTRUMENTATION_ENABLED
+      value: "true"
+  python:
+    image: otel-poc/python-instrumentation-genai:dev

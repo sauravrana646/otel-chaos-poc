@@ -1,0 +1,264 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: poc-apps
+  namespace: otel-poc-apps
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llm-mock
+  namespace: otel-poc-apps
+  labels:
+    app.kubernetes.io/name: llm-mock
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: llm-mock
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llm-mock
+    spec:
+      containers:
+        - name: app
+          image: otel-poc/llm-mock:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 250m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llm-mock
+  namespace: otel-poc-apps
+spec:
+  selector:
+    app.kubernetes.io/name: llm-mock
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-llm
+  namespace: otel-poc-apps
+  labels:
+    app.kubernetes.io/name: python-llm
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: python-llm
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: python-llm
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: python-genai
+    spec:
+      serviceAccountName: poc-apps
+      containers:
+        - name: app
+          image: otel-poc/python-llm:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: uri
+            - name: PROVIDER_BASE_URL
+              value: http://llm-mock:8080/v1
+            - name: PROVIDER_API_KEY
+              value: mock-key
+            - name: PROVIDER_MODEL
+              value: mock-gpt
+            - name: LLM_PROFILE
+              value: mock
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-llm
+  namespace: otel-poc-apps
+spec:
+  selector:
+    app.kubernetes.io/name: python-llm
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-analysis
+  namespace: otel-poc-apps
+  labels:
+    app.kubernetes.io/name: python-analysis
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: python-analysis
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: python-analysis
+      annotations:
+        instrumentation.opentelemetry.io/inject-python: python-web
+    spec:
+      serviceAccountName: poc-apps
+      containers:
+        - name: app
+          image: otel-poc/python-analysis:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_DSN
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: uri
+            - name: LLM_BASE_URL
+              value: http://toxiproxy-llm:8080
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-analysis
+  namespace: otel-poc-apps
+spec:
+  selector:
+    app.kubernetes.io/name: python-analysis
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: java-api
+  namespace: otel-poc-apps
+  labels:
+    app.kubernetes.io/name: java-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: java-api
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: java-api
+      annotations:
+        instrumentation.opentelemetry.io/inject-java: java
+    spec:
+      serviceAccountName: poc-apps
+      containers:
+        - name: app
+          image: otel-poc/java-api:dev
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: username
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: password
+            - name: DB_JDBC_URL
+              value: jdbc:postgresql://toxiproxy:5432/poc
+            - name: ANALYSIS_BASE_URL
+              value: http://python-analysis:8080
+          ports:
+            - name: http
+              containerPort: 8080
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: 15
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+          resources:
+            requests:
+              cpu: 150m
+              memory: 384Mi
+            limits:
+              cpu: "1"
+              memory: 768Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: java-api
+  namespace: otel-poc-apps
+spec:
+  selector:
+    app.kubernetes.io/name: java-api
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http

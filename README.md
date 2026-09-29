@@ -1,0 +1,112 @@
+# otel-chaos-poc
+
+Local OrbStack Kubernetes POC for **automatic OpenTelemetry tracing**, **CloudNativePG**, **Argo CD GitOps**, and **repeatable chaos / load tests**, with correlated metrics, traces, and logs in Grafana.
+
+The platform owns instrumentation packaging, injection, configuration, and compatibility. Application source contains business behavior and resilience logic only — no OTel SDK initialization, tracing decorators, or custom spans.
+
+## What this demonstrates
+
+- End-to-end traces: Java API → Python analysis → LLM service → PostgreSQL client spans (+ GenAI outbound calls)
+- OpenTelemetry Operator auto-injection (Java + custom Python images)
+- CloudNativePG-managed PostgreSQL (metrics, structured logs, restart recovery)
+- Tempo + Loki beside existing Grafana / Prometheus
+- k6 load + Toxiproxy faults + scoped pod restarts
+- Bounded OpenRouter smoke (optional) vs local deterministic LLM mock
+
+## Repository layout
+
+```text
+apps/                 Sample services (Java API, Python analysis, LLM, mock)
+db/                   Schema and seed Job assets
+platform/             Argo CD apps, operators, CNPG, OTel, Tempo/Loki, Toxiproxy
+instrumentation/      Custom Python auto-instrumentation image definitions
+tests/                k6 scripts and fault Jobs
+cli/                  `poc` command interface
+docs/                 Architecture and design decisions
+compatibility.lock.yaml
+```
+
+## Prerequisites
+
+- OrbStack Kubernetes (ARM64), ~**12 GiB** memory recommended
+- Existing cluster components reused by this POC: **Argo CD**, **Grafana**, **Prometheus** (kube-prometheus-stack)
+- Docker (OrbStack) for local ARM64 image builds
+- Optional: OpenRouter API key + model ID for real-model smoke
+
+Recheck cluster state before changing anything:
+
+```bash
+./cli/poc doctor
+```
+
+## Quick start (high level)
+
+```bash
+# 1. Pin / review versions
+cat compatibility.lock.yaml
+
+# 2. Build local ARM64 images (immutable tags)
+./cli/poc build
+
+# 3. Bootstrap Argo CD apps in documented order
+./cli/poc bootstrap
+
+# 4. Mock smoke (full trace assertion)
+./cli/poc smoke --mock
+
+# 5. Load / fault scenarios (one at a time)
+./cli/poc load --scenario spike
+./cli/poc fault --scenario db-outage
+
+# 6. Optional real-model smoke
+./cli/poc smoke --openrouter
+
+# 7. Verify + reset fault state (keeps CNPG data)
+./cli/poc verify
+./cli/poc reset
+```
+
+Destructive teardown of POC namespaces / PVCs is explicit:
+
+```bash
+./cli/poc destroy   # prompts; does not remove shared Argo CD / Grafana / Prometheus
+```
+
+## Sample request flow
+
+```text
+k6 → Java POST /api/recommendations
+       → JDBC catalog read
+       → Python POST /analyze
+            → psycopg context read
+            → LLM POST /generate
+                 → mock or OpenRouter (/v1/chat/completions)
+                 → psycopg idempotent result write
+```
+
+Public contract fields: `request_id`, `item_id`, `scenario` (allowlisted). Health endpoints are separate and excluded from tracing dashboards.
+
+## Namespaces
+
+| Namespace | Contents |
+|-----------|----------|
+| `otel-poc-system` | OpenTelemetry Operator |
+| `otel-poc-cnpg-system` | CloudNativePG Operator |
+| `otel-poc-observability` | Collector, Tempo, Loki, DB log collector |
+| `otel-poc-apps` | Apps, CNPG cluster, mock, Toxiproxy |
+| `otel-poc-tests` | k6 / fault Jobs |
+
+## Documentation
+
+- [Architecture](docs/architecture.md)
+- [Design decisions](docs/design-decisions.md)
+- [Implementation plan](docs/implementation-plan.md)
+- [Compatibility lock](compatibility.lock.yaml)
+
+## Boundaries
+
+Single-node development POC. Not a claim of production performance, host HA, replica promotion, backup/restore readiness, or visibility into external LLM provider internals. No Envoy, service mesh, or privileged chaos daemon in the initial scope.
+
+## Status
+
+Initial repository scaffold: applications, platform manifests, tests, CLI stubs, and docs aligned to the implementation plan. Cluster deploy and Phase A compatibility gates still need to be executed against your OrbStack environment.

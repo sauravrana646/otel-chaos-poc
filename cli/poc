@@ -1,0 +1,303 @@
+#!/usr/bin/env bash
+# poc — command interface for the otel-chaos-poc
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+cd "$ROOT"
+
+TAG="${POC_IMAGE_TAG:-dev}"
+REGISTRY_PREFIX="${POC_IMAGE_PREFIX:-otel-poc}"
+EVIDENCE_DIR="${ROOT}/evidence"
+NAMESPACE_APPS="otel-poc-apps"
+ARGOCD_NS="${ARGOCD_NAMESPACE:-argocd}"
+
+usage() {
+  cat <<'EOF'
+Usage: poc <command> [options]
+
+Commands:
+  doctor                 Recheck cluster capacity, tools, and existing operators
+  build                  Build local ARM64 images with immutable-friendly tags
+  bootstrap              Create Argo CD project/apps and sync in documented order
+  smoke --mock           Bounded mock end-to-end smoke + trace checklist
+  smoke --openrouter     Bounded real-model smoke (requires secret + model)
+  load --scenario NAME   Run k6 load scenario (baseline|spike)
+  fault --scenario NAME  Activate fault scenario (db-outage|db-restart|latency|retry-success|retry-exhaust|tempo-down|app-restart)
+  verify                 Summarize last run assertions / cluster health
+  reset                  Restore Toxiproxy + mock state (keeps CNPG data)
+  destroy                Tear down POC namespaces (prompts; keeps shared stacks)
+
+Environment:
+  POC_IMAGE_TAG          Image tag (default: dev)
+  POC_IMAGE_PREFIX       Image name prefix (default: otel-poc)
+  ARGOCD_NAMESPACE       Argo CD namespace (default: argocd)
+  OPENROUTER_API_KEY     Optional; used only for smoke --openrouter secret apply
+  OPENROUTER_MODEL       Optional model id
+EOF
+}
+
+need() {
+  command -v "$1" >/dev/null 2>&1 || {
+    echo "missing required tool: $1" >&2
+    exit 1
+  }
+}
+
+cmd_doctor() {
+  need kubectl
+  need docker
+  echo "== Tools =="
+  kubectl version --client 2>/dev/null | head -2 || true
+  docker version --format '{{.Server.Os}}/{{.Server.Arch}}' 2>/dev/null || docker info 2>/dev/null | head -5
+  command -v argocd >/dev/null && argocd version --client 2>/dev/null | head -3 || echo "argocd CLI: not found (optional; kubectl apply used)"
+  command -v k6 >/dev/null && k6 version || echo "k6: not found (needed for load/smoke)"
+
+  echo
+  echo "== Cluster =="
+  kubectl get nodes -o wide
+  kubectl top nodes 2>/dev/null || echo "(metrics-server not available — skip top)"
+  echo
+  echo "StorageClasses:"
+  kubectl get storageclass
+  echo
+  echo "Existing operators / monitoring (best-effort):"
+  kubectl get ns | grep -E 'argocd|monitoring|grafana|cert-manager|newrelic|kyverno' || true
+  kubectl get deploy -A 2>/dev/null | grep -Ei 'argocd|prometheus|grafana|cert-manager|newrelic' | head -40 || true
+  echo
+  echo "POC namespaces:"
+  kubectl get ns -l poc.otel/part-of=otel-chaos-poc 2>/dev/null || echo "(none yet)"
+  echo
+  echo "Review compatibility.lock.yaml and docs/design-decisions.md before bootstrap."
+  echo "Recommended OrbStack memory: 12Gi."
+}
+
+cmd_build() {
+  need docker
+  mkdir -p "$EVIDENCE_DIR"
+  local record="${EVIDENCE_DIR}/build-record-${TAG}.json"
+  echo "{\"tag\":\"${TAG}\",\"built_at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"images\":[" >"$record"
+  local first=1
+
+  build_one() {
+    local name="$1"
+    local context="$2"
+    local dockerfile="$3"
+    local image="${REGISTRY_PREFIX}/${name}:${TAG}"
+    echo "Building ${image} ..."
+    docker build --platform linux/arm64 -t "$image" -f "$dockerfile" "$context"
+    local digest
+    digest="$(docker image inspect "$image" --format '{{index .RepoDigests 0}}' 2>/dev/null || echo "local://${image}")"
+    if [[ "$first" -eq 1 ]]; then first=0; else echo "," >>"$record"; fi
+    printf '{"name":"%s","image":"%s","digest":"%s"}' "$name" "$image" "$digest" >>"$record"
+  }
+
+  build_one java-api apps/java-api apps/java-api/Dockerfile
+  build_one python-analysis apps/python-analysis apps/python-analysis/Dockerfile
+  build_one python-llm apps/python-llm apps/python-llm/Dockerfile
+  build_one llm-mock apps/llm-mock apps/llm-mock/Dockerfile
+  build_one python-instrumentation-web instrumentation/python-web instrumentation/python-web/Dockerfile
+  build_one python-instrumentation-genai instrumentation instrumentation/python-genai/Dockerfile
+
+  echo "]}" >>"$record"
+  echo "Build record: $record"
+  echo "Images tagged :${TAG} with imagePullPolicy IfNotPresent for OrbStack local share."
+}
+
+sync_app() {
+  local app="$1"
+  echo "Syncing Application/${app} ..."
+  if command -v argocd >/dev/null 2>&1; then
+    argocd app sync "$app" --timeout 300 || kubectl -n "$ARGOCD_NS" annotate application "$app" argocd.argoproj.io/refresh=hard --overwrite
+  fi
+  kubectl -n "$ARGOCD_NS" patch application "$app" --type merge -p '{"operation":{"initiatedBy":{"username":"poc-cli"},"sync":{"revision":"HEAD"}}}' 2>/dev/null \
+    || kubectl -n "$ARGOCD_NS" annotate application "$app" argocd.argoproj.io/refresh=normal --overwrite
+  # Wait best-effort for Healthy/Synced
+  for _ in $(seq 1 60); do
+    local sync health
+    sync="$(kubectl -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || echo Missing)"
+    health="$(kubectl -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.health.status}' 2>/dev/null || echo Missing)"
+    echo "  ${app}: sync=${sync} health=${health}"
+    if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then
+      return 0
+    fi
+    sleep 5
+  done
+  echo "warning: timed out waiting for ${app} (continuing)" >&2
+}
+
+cmd_bootstrap() {
+  need kubectl
+  echo "Ensuring POC namespaces exist..."
+  kubectl apply -f platform/namespaces/namespaces.yaml
+
+  local db_pass="${POC_DB_PASSWORD:-}"
+  if [[ -z "$db_pass" ]]; then
+    db_pass="$(openssl rand -base64 24 | tr -d '/+=' | cut -c1-24)"
+  fi
+  echo "Creating/updating poc-postgres-app Secret (password not printed)..."
+  kubectl -n "$NAMESPACE_APPS" create secret generic poc-postgres-app \
+    --from-literal=username=poc_app \
+    --from-literal=password="$db_pass" \
+    --from-literal=uri="postgresql://poc_app:${db_pass}@toxiproxy:5432/poc" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  kubectl -n "$NAMESPACE_APPS" label secret poc-postgres-app cnpg.io/reload=true --overwrite
+
+  echo "Applying Argo CD project + application set (cluster must reach the GitHub repo)."
+  kubectl apply -f platform/argocd/project/project.yaml
+  kubectl apply -f platform/argocd/applications/apps.yaml
+  kubectl apply -f platform/argocd/applications/root-app.yaml
+
+  # Ordered bootstrap (annotations are documentation; CLI enforces order)
+  for app in \
+    otel-poc-namespaces \
+    otel-poc-cnpg-operator \
+    otel-poc-otel-operator \
+    otel-poc-observability \
+    otel-poc-instrumentation \
+    otel-poc-cnpg-cluster \
+    otel-poc-toxiproxy \
+    otel-poc-apps \
+    otel-poc-dashboards
+  do
+    if kubectl -n "$ARGOCD_NS" get application "$app" >/dev/null 2>&1; then
+      sync_app "$app"
+    else
+      echo "Application ${app} not found yet — ensure apps.yaml applied"
+    fi
+  done
+  echo "Bootstrap sequence requested. Run: kubectl get applications -n ${ARGOCD_NS}"
+}
+
+cmd_smoke_mock() {
+  need kubectl
+  mkdir -p "$EVIDENCE_DIR"
+  local rid="smoke-$(date +%s)"
+  echo "Port-forward java-api and POST request_id=${rid}"
+  kubectl -n "$NAMESPACE_APPS" port-forward svc/java-api 8080:8080 >/tmp/poc-pf-java.log 2>&1 &
+  local pf=$!
+  sleep 2
+  trap 'kill $pf 2>/dev/null || true' EXIT
+  curl -fsS -X POST http://127.0.0.1:8080/api/recommendations \
+    -H 'content-type: application/json' \
+    -H "traceparent: 00-$(printf '%032x' 0 | sed "s/0/$(echo -n "$rid" | shasum | cut -c1-16)/")-0000000000000001-01" \
+    -d "{\"request_id\":\"${rid}\",\"item_id\":\"item-100\",\"scenario\":\"normal\"}" \
+    | tee "${EVIDENCE_DIR}/smoke-mock-${rid}.json"
+  echo
+  echo "Look up traces in Grafana Tempo for request_id=${rid} / service java-api."
+}
+
+cmd_smoke_openrouter() {
+  if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_MODEL:-}" ]]; then
+    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL required. Marking real-model verification incomplete." >&2
+    exit 2
+  fi
+  kubectl -n "$NAMESPACE_APPS" create secret generic openrouter \
+    --from-literal=api-key="$OPENROUTER_API_KEY" \
+    --dry-run=client -o yaml | kubectl apply -f -
+  echo "Secret applied. Patch python-llm to OpenRouter profile manually or via overlay, then re-run five requests (see docs)."
+  echo "Model=${OPENROUTER_MODEL}"
+}
+
+cmd_load() {
+  local scenario="${1:-}"
+  need k6
+  case "$scenario" in
+    baseline) k6 run tests/k6/baseline.js ;;
+    spike) k6 run tests/k6/spike.js ;;
+    *) echo "unknown load scenario: $scenario (baseline|spike)" >&2; exit 1 ;;
+  esac
+}
+
+cmd_fault() {
+  local scenario="${1:-}"
+  case "$scenario" in
+    db-outage)
+      kubectl -n "$NAMESPACE_APPS" exec deploy/toxiproxy -- \
+        /toxiproxy-cli toxic add postgres -t timeout -a timeout=1 || \
+      kubectl -n "$NAMESPACE_APPS" exec deploy/toxiproxy -- \
+        toxiproxy-cli toxic add postgres -t timeout -a timeout=1
+      echo "DB proxy timeout toxic added. Cleanup via: poc reset"
+      ;;
+    db-restart)
+      kubectl -n "$NAMESPACE_APPS" delete pod -l cnpg.io/cluster=poc-postgres --wait=false
+      echo "Deleted CNPG pod(s); Cluster CR + PVC retained."
+      ;;
+    latency)
+      kubectl -n "$NAMESPACE_APPS" exec deploy/toxiproxy -- \
+        toxiproxy-cli toxic add llm-http -t latency -a latency=500 -a jitter=0
+      ;;
+    app-restart)
+      kubectl -n "$NAMESPACE_APPS" delete pod -l app.kubernetes.io/name=python-analysis --field-selector=status.phase=Running | head -1
+      ;;
+    *)
+      echo "unknown or not-yet-automated fault: $scenario" >&2
+      echo "supported: db-outage|db-restart|latency|app-restart" >&2
+      exit 1
+      ;;
+  esac
+}
+
+cmd_verify() {
+  kubectl get applications -n "$ARGOCD_NS" 2>/dev/null || true
+  kubectl get pods -n "$NAMESPACE_APPS" -o wide 2>/dev/null || true
+  kubectl get pods -n otel-poc-observability -o wide 2>/dev/null || true
+  ls -la "$EVIDENCE_DIR" 2>/dev/null || echo "No evidence yet"
+}
+
+cmd_reset() {
+  kubectl -n "$NAMESPACE_APPS" exec deploy/toxiproxy -- toxiproxy-cli toxic remove postgres all 2>/dev/null || true
+  kubectl -n "$NAMESPACE_APPS" exec deploy/toxiproxy -- toxiproxy-cli toxic remove llm-http all 2>/dev/null || true
+  kubectl -n "$NAMESPACE_APPS" exec deploy/llm-mock -- \
+    wget -qO- --post-data='' http://127.0.0.1:8080/admin/reset 2>/dev/null \
+    || kubectl -n "$NAMESPACE_APPS" exec deploy/llm-mock -- \
+      python -c 'import urllib.request; urllib.request.urlopen(urllib.request.Request("http://127.0.0.1:8080/admin/reset", method="POST"))'
+  echo "Toxiproxy toxics cleared; mock reset. CNPG data retained."
+}
+
+cmd_destroy() {
+  read -r -p "Destroy POC namespaces and apps? Shared Argo/Grafana/Prometheus kept. Type 'destroy-poc' to continue: " ans
+  if [[ "$ans" != "destroy-poc" ]]; then
+    echo "Aborted."
+    exit 1
+  fi
+  kubectl delete applications -n "$ARGOCD_NS" -l app.kubernetes.io/part-of=otel-chaos-poc --ignore-not-found || true
+  for app in otel-poc-dashboards otel-poc-apps otel-poc-toxiproxy otel-poc-cnpg-cluster \
+    otel-poc-instrumentation otel-poc-observability otel-poc-otel-operator \
+    otel-poc-cnpg-operator otel-poc-namespaces otel-poc-root; do
+    kubectl -n "$ARGOCD_NS" delete application "$app" --ignore-not-found
+  done
+  kubectl delete ns otel-poc-tests otel-poc-apps otel-poc-observability otel-poc-system otel-poc-cnpg-system --wait=false
+  echo "Destroy requested. PVCs may remain until namespaces finish terminating."
+}
+
+main() {
+  local cmd="${1:-}"
+  shift || true
+  case "$cmd" in
+    -h|--help|help|"") usage ;;
+    doctor) cmd_doctor "$@" ;;
+    build) cmd_build "$@" ;;
+    bootstrap) cmd_bootstrap "$@" ;;
+    smoke)
+      case "${1:-}" in
+        --mock) cmd_smoke_mock ;;
+        --openrouter) cmd_smoke_openrouter ;;
+        *) echo "usage: poc smoke --mock|--openrouter" >&2; exit 1 ;;
+      esac
+      ;;
+    load)
+      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc load --scenario NAME" >&2; exit 1; }
+      cmd_load "${2:-}"
+      ;;
+    fault)
+      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc fault --scenario NAME" >&2; exit 1; }
+      cmd_fault "${2:-}"
+      ;;
+    verify) cmd_verify "$@" ;;
+    reset) cmd_reset "$@" ;;
+    destroy) cmd_destroy "$@" ;;
+    *) echo "unknown command: $cmd" >&2; usage; exit 1 ;;
+  esac
+}
+
+main "$@"

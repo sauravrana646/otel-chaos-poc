@@ -1,0 +1,118 @@
+# Application DB Secret is created by `./cli/poc bootstrap` (not committed).
+# See platform/cnpg/app-secret.yaml.example
+apiVersion: postgresql.cnpg.io/v1
+kind: Cluster
+metadata:
+  name: poc-postgres
+  namespace: otel-poc-apps
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"
+spec:
+  instances: 1
+  imageName: ghcr.io/cloudnative-pg/postgresql:17
+  enableSuperuserAccess: false
+  storage:
+    size: 2Gi
+    storageClass: local-path
+  bootstrap:
+    initdb:
+      database: poc
+      owner: poc_app
+      secret:
+        name: poc-postgres-app
+  postgresql:
+    parameters:
+      log_min_duration_statement: "250"
+      log_destination: stderr
+      logging_collector: "off"
+  monitoring:
+    enablePodMonitor: false
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 512Mi
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PodMonitor
+metadata:
+  name: poc-postgres
+  namespace: otel-poc-apps
+  labels:
+    release: kube-prometheus-stack
+    poc.otel/part-of: otel-chaos-poc
+spec:
+  selector:
+    matchLabels:
+      cnpg.io/cluster: poc-postgres
+  podMetricsEndpoints:
+    - port: metrics
+      interval: 30s
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: poc-postgres-seed
+  namespace: otel-poc-apps
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: seed
+          image: postgres:17
+          env:
+            - name: PGHOST
+              value: poc-postgres-rw
+            - name: PGUSER
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: username
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: poc-postgres-app
+                  key: password
+            - name: PGDATABASE
+              value: poc
+          command:
+            - /bin/bash
+            - -ec
+            - |
+              until pg_isready -h "$PGHOST" -U "$PGUSER" -d "$PGDATABASE"; do sleep 2; done
+              psql -v ON_ERROR_STOP=1 <<'SQL'
+              CREATE TABLE IF NOT EXISTS catalog_items (
+                item_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                category TEXT NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS item_context (
+                item_id TEXT PRIMARY KEY REFERENCES catalog_items(item_id),
+                context_text TEXT NOT NULL
+              );
+              CREATE TABLE IF NOT EXISTS recommendations (
+                request_id TEXT PRIMARY KEY,
+                item_id TEXT NOT NULL REFERENCES catalog_items(item_id),
+                result_text TEXT NOT NULL,
+                model_name TEXT,
+                created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+              );
+              INSERT INTO catalog_items (item_id, name, category) VALUES
+                ('item-100', 'Trail Runner', 'footwear'),
+                ('item-200', 'Camp Stove', 'outdoors'),
+                ('item-300', 'Desk Lamp', 'home')
+              ON CONFLICT (item_id) DO NOTHING;
+              INSERT INTO item_context (item_id, context_text) VALUES
+                ('item-100', 'Popular with weekend hikers; prefer cushioned soles.'),
+                ('item-200', 'Lightweight backpacking; fuel efficiency matters.'),
+                ('item-300', 'Warm white light preferred for evening reading.')
+              ON CONFLICT (item_id) DO NOTHING;
+              SQL

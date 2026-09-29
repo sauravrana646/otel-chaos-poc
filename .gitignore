@@ -1,0 +1,38 @@
+# Secrets and local env
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+**/secret*.yaml
+!**/secret*.yaml.example
+
+# Build artifacts
+target/
+build/
+dist/
+*.jar
+*.class
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+node_modules/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+.cursor/
+
+# Test / run evidence
+evidence/
+runs/
+*.log
+.k6/
+
+# Local image build records (keep lock file)
+.build-record.local.json

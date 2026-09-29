@@ -1,0 +1,19 @@
+# Root app-of-apps. Sync order is enforced by ./cli/poc bootstrap (not cross-app waves).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: otel-poc-root
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://github.com/sauravrana646/otel-chaos-poc.git
+    targetRevision: main
+    path: platform/argocd/applications
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: null

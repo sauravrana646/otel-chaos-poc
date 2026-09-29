@@ -95,3 +95,9 @@ Record of choices for the OrbStack OpenTelemetry + CloudNativePG + chaos POC. Up
 **Decision:** Mock suite is required for POC completion. OpenRouter smoke is required when key+model are configured; otherwise mark real-model verification incomplete without failing the mock path.
 
 **Why:** Aligns completion criteria with environments that cannot call external providers.
+
+## DD-015: Force Java RestClient to HTTP/1.1
+
+**Decision:** Configure JDK `HttpClient` with `Version.HTTP_1_1` via `RestClientCustomizer`.
+
+**Why:** Default JDK client sends `Connection: Upgrade` / `Upgrade: h2c`. Uvicorn/FastAPI then returns 422 with an empty body (`Field required`), breaking Java→Python calls under auto-instrumentation.

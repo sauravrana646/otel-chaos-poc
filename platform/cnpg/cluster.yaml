@@ -23,8 +23,6 @@ spec:
   postgresql:
     parameters:
       log_min_duration_statement: "250"
-      log_destination: stderr
-      logging_collector: "off"
   monitoring:
     enablePodMonitor: false
   resources:
@@ -68,6 +66,13 @@ spec:
       containers:
         - name: seed
           image: postgres:17
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           env:
             - name: PGHOST
               value: poc-postgres-rw

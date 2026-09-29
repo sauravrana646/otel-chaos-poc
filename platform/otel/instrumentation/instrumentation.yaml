@@ -5,7 +5,7 @@ metadata:
   namespace: otel-poc-apps
 spec:
   exporter:
-    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+    endpoint: http://otel-collector.otel-poc-observability.svc:4318
   propagators:
     - tracecontext
     - baggage
@@ -27,7 +27,7 @@ metadata:
   namespace: otel-poc-apps
 spec:
   exporter:
-    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+    endpoint: http://otel-collector.otel-poc-observability.svc:4318
   propagators:
     - tracecontext
     - baggage
@@ -52,7 +52,7 @@ metadata:
   namespace: otel-poc-apps
 spec:
   exporter:
-    endpoint: http://otel-collector.otel-poc-observability.svc:4317
+    endpoint: http://otel-collector.otel-poc-observability.svc:4318
   propagators:
     - tracecontext
     - baggage

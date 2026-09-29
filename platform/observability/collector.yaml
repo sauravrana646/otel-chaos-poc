@@ -33,7 +33,6 @@ data:
         dimensions:
           - name: http.method
           - name: http.status_code
-          - name: service.name
         exemplars:
           enabled: true
       servicegraph:
@@ -51,7 +50,7 @@ data:
         endpoint: 0.0.0.0:8889
         resource_to_telemetry_conversion:
           enabled: true
-      logging:
+      debug:
         verbosity: basic
     service:
       pipelines:

@@ -28,9 +28,11 @@ public class RecommendationsController {
   private final RestClient analysisClient;
 
   public RecommendationsController(
-      JdbcTemplate jdbc, @Value("${poc.analysis.base-url}") String analysisBaseUrl) {
+      JdbcTemplate jdbc,
+      RestClient.Builder restClientBuilder,
+      @Value("${poc.analysis.base-url}") String analysisBaseUrl) {
     this.jdbc = jdbc;
-    this.analysisClient = RestClient.builder().baseUrl(analysisBaseUrl).build();
+    this.analysisClient = restClientBuilder.baseUrl(analysisBaseUrl).build();
   }
 
   @GetMapping("/healthz")

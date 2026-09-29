@@ -1,4 +1,5 @@
-# Provisioned for Grafana sidecar (adjust label to match your Grafana sidecar config).
+# Provisioned for Grafana sidecar (label grafana_datasource=1).
+# Sidecar for datasources watches the Grafana namespace; dashboards use NAMESPACE=ALL.
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -16,11 +17,13 @@ data:
         url: http://tempo.otel-poc-observability.svc:3200
         uid: tempo-poc
         jsonData:
+          httpMethod: GET
           tracesToLogsV2:
             datasourceUid: loki-poc
             spanStartTimeShift: "-1h"
             spanEndTimeShift: "1h"
             filterByTraceID: true
+            filterBySpanID: false
           tracesToMetrics:
             datasourceUid: prometheus
           serviceMap:
@@ -35,9 +38,10 @@ data:
         url: http://loki.otel-poc-observability.svc:3100
         uid: loki-poc
         jsonData:
+          maxLines: 1000
           derivedFields:
-            - datasourceUid: tempo-poc
-              matcherRegex: "trace_id=(\\w+)"
-              name: TraceID
+            - name: TraceID
+              datasourceUid: tempo-poc
+              matcherRegex: "trace[_-]?[iI][dD][=:\\\" ]+([a-fA-F0-9]{16,32})"
               url: "$${__value.raw}"
               urlDisplayLabel: View Trace

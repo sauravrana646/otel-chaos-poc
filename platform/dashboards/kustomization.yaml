@@ -1,0 +1,22 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: otel-poc-observability
+generatorOptions:
+  disableNameSuffixHash: true
+  labels:
+    grafana_dashboard: "1"
+  annotations:
+    grafana_folder: OTel POC
+configMapGenerator:
+  - name: otel-poc-dashboard-overview
+    files:
+      - otel-poc-overview.json=overview.json
+  - name: otel-poc-dashboard-runtime-db
+    files:
+      - otel-poc-runtime-db.json=runtime-database.json
+  - name: otel-poc-dashboard-traces-logs
+    files:
+      - otel-poc-traces-logs.json=traces-logs.json
+  - name: otel-poc-dashboard-scenario
+    files:
+      - otel-poc-scenario.json=scenario-comparison.json

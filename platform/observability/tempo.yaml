@@ -29,9 +29,22 @@ data:
           path: /var/tempo/traces
         wal:
           path: /var/tempo/wal
-    # Span metrics and service graphs are generated once by the central
-    # Collector. Keeping Tempo's generator disabled avoids duplicate series
-    # and does not require Prometheus's remote-write receiver.
+    # Grafana Traces Drilldown uses TraceQL metrics. Tempo 2.7 serves those
+    # queries from RF1 blocks produced by the local-blocks processor.
+    metrics_generator:
+      traces_storage:
+        path: /var/tempo/generator/traces
+      processor:
+        local_blocks:
+          flush_to_storage: true
+    overrides:
+      defaults:
+        metrics_generator:
+          processors:
+            - local-blocks
+    # Span metrics and service graphs remain generated once by the central
+    # Collector. Do not enable those processors here or they will duplicate
+    # the Prometheus series already produced by the Collector connectors.
 ---
 apiVersion: apps/v1
 kind: Deployment

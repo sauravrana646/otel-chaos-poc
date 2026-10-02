@@ -118,3 +118,15 @@ Single-node development POC. Not a claim of production performance, host HA, rep
 ## Status
 
 The pinned stack has passed a clean Argo CD reconciliation and the normal, retry-success, retry-exhaust, and streaming trace assertions on OrbStack. The k6 load and Toxiproxy fault acceptance suite remains a separate, intentionally disruptive validation step.
+
+## Explore traces in Grafana
+
+Use **Drilldown → Traces** for the queryless trace investigation UI. Select
+`Tempo-POC`, then choose **Rate**, **Errors**, or **Duration** and filter by
+service, span, or attribute. Open an individual result when you need its full
+waterfall and span attributes.
+
+Tempo's `local-blocks` processor is enabled specifically for the TraceQL
+metrics queries used by Traces Drilldown. Prometheus span metrics and service
+graphs continue to come from the central OpenTelemetry Collector, avoiding
+duplicate metric series.

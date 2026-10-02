@@ -32,6 +32,8 @@ data:
     # Grafana Traces Drilldown uses TraceQL metrics. Tempo 2.7 serves those
     # queries from RF1 blocks produced by the local-blocks processor.
     metrics_generator:
+      storage:
+        path: /var/tempo/generator/wal
       traces_storage:
         path: /var/tempo/generator/traces
       processor:
@@ -61,7 +63,7 @@ spec:
   template:
     metadata:
       annotations:
-        checksum/tempo-config: "3cbdeb6eb61b1c14055d66272270cabf4b5dbe63c6b1014fd15b5a0c3227750c"
+        checksum/tempo-config: "ee9add2107a6e179c7b6402131722dbb1c0a134b33e69e264957ba892e5d8bb1"
       labels:
         app.kubernetes.io/name: tempo
     spec:

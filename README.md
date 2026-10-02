@@ -65,12 +65,25 @@ cat compatibility.lock.yaml
 # 6. Optional real-model smoke
 ./cli/poc smoke --openrouter
 
+# Update or verify the OpenRouter model/key independently
+OPENROUTER_API_KEY='new-key' ./cli/poc openrouter update --model openai/gpt-4o-mini
+OPENROUTER_API_KEY='rotated-key' ./cli/poc openrouter update
+./cli/poc openrouter update --model anthropic/claude-sonnet-4
+./cli/poc openrouter verify
+
 # 7. Verify + reset fault state (keeps CNPG data)
 ./cli/poc verify
 ./cli/poc reset
 ```
 
 Provider selection is per request. Commands use the mock unless `--provider openrouter` is present; selecting OpenRouter does not mutate or roll out the application Deployment.
+
+`openrouter update` changes only the values provided and reuses the other value
+from the existing Secret. Supply API keys through `OPENROUTER_API_KEY` so they
+do not appear in shell command arguments. Both `update` and `verify` compare the
+Secret with every running `python-llm` pod, then print the model and a masked
+key. OpenRouter load, retry, fault, and smoke commands perform the same exact
+projection check before sending traffic.
 
 Stateless teardown retains PostgreSQL and observability data. Data deletion is a separate explicit operation:
 

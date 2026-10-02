@@ -35,6 +35,8 @@ Commands:
   bootstrap                      Create and strictly sync the Argo CD applications
   smoke --mock [--scenario NAME] Run normal, retry-success, retry-exhaust, or stream
   smoke --openrouter             Run exactly five sequential real-provider requests
+  openrouter update [--model ID] Update the model and/or OPENROUTER_API_KEY
+  openrouter verify              Verify the Secret on every python-llm pod
   retry --provider NAME --scenario NAME
                                  Mock: success|exhaust; OpenRouter: live
   load --scenario NAME --provider mock|openrouter
@@ -51,8 +53,8 @@ Environment:
   POC_IMAGE_TAG                  Immutable image tag (clean: git-<commit>; dirty: timestamp)
   POC_IMAGE_PREFIX               Image prefix (default: otel-poc)
   POC_FAULT_TTL_SECONDS          Automatic toxic cleanup delay (default: 60)
-  OPENROUTER_API_KEY             Required for smoke --openrouter
-  OPENROUTER_MODEL               Required for smoke --openrouter
+  OPENROUTER_API_KEY             New key for `openrouter update`, or initial setup
+  OPENROUTER_MODEL               New model for `openrouter update`, or initial setup
 EOF
 }
 
@@ -419,40 +421,138 @@ cmd_smoke_openrouter() {
 }
 
 ensure_openrouter_credentials() {
-  local attempt pod ready pod_count
-  if [[ -n "${OPENROUTER_API_KEY:-}" && -n "${OPENROUTER_MODEL:-}" ]]; then
-    k -n "$NAMESPACE_APPS" create secret generic openrouter \
-      --from-literal=api-key="$OPENROUTER_API_KEY" \
-      --from-literal=model="$OPENROUTER_MODEL" \
-      --dry-run=client -o yaml | k apply -f - >/dev/null
-  elif [[ -n "${OPENROUTER_API_KEY:-}" || -n "${OPENROUTER_MODEL:-}" ]]; then
-    echo "Set both OPENROUTER_API_KEY and OPENROUTER_MODEL, or leave both unset to reuse the existing Secret." >&2
-    return 2
-  elif ! k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1; then
+  if [[ -n "${OPENROUTER_API_KEY:-}" || -n "${OPENROUTER_MODEL:-}" ]]; then
+    update_openrouter_credentials "${OPENROUTER_MODEL:-}" false
+    return
+  fi
+  if ! k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1; then
     echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required the first time --provider openrouter is used." >&2
     return 2
   fi
-  for attempt in $(seq 1 30); do
+  read_openrouter_secret
+  wait_for_openrouter_projection 120
+}
+
+read_openrouter_secret() {
+  OPENROUTER_EXPECTED_API_KEY="$(k -n "$NAMESPACE_APPS" get secret openrouter \
+    -o go-template='{{index .data "api-key" | base64decode}}')"
+  OPENROUTER_EXPECTED_MODEL="$(k -n "$NAMESPACE_APPS" get secret openrouter \
+    -o go-template='{{index .data "model" | base64decode}}')"
+}
+
+masked_value() {
+  local value="$1" length
+  length=${#value}
+  if (( length <= 8 )); then
+    printf '%*s' "$length" '' | tr ' ' '*'
+  else
+    printf '%s...%s' "${value:0:4}" "${value: -4}"
+  fi
+}
+
+print_openrouter_configuration() {
+  local pod_count="$1"
+  echo "OpenRouter model: $OPENROUTER_EXPECTED_MODEL"
+  echo "OpenRouter API key: $(masked_value "$OPENROUTER_EXPECTED_API_KEY")"
+  echo "Secret projection: verified on ${pod_count} python-llm pod(s)"
+}
+
+apply_openrouter_secret() (
+  local credentials_dir
+  credentials_dir="$(mktemp -d "${TMPDIR:-/tmp}/otel-poc-openrouter.XXXXXX")"
+  trap 'rm -f "$credentials_dir/api-key" "$credentials_dir/model"; rmdir "$credentials_dir"' EXIT
+  chmod 700 "$credentials_dir"
+  printf '%s' "$OPENROUTER_EXPECTED_API_KEY" >"$credentials_dir/api-key"
+  printf '%s' "$OPENROUTER_EXPECTED_MODEL" >"$credentials_dir/model"
+  chmod 600 "$credentials_dir/api-key" "$credentials_dir/model"
+  k -n "$NAMESPACE_APPS" create secret generic openrouter \
+    --from-file=api-key="$credentials_dir/api-key" \
+    --from-file=model="$credentials_dir/model" \
+    --dry-run=client -o yaml | k apply -f - >/dev/null
+)
+
+wait_for_openrouter_projection() {
+  local max_attempts="$1" attempt pod ready pod_count pod_key pod_model
+  for attempt in $(seq 1 "$max_attempts"); do
     ready=1
     pod_count=0
     while IFS= read -r pod; do
       if [[ -n "$pod" ]]; then
         pod_count=$((pod_count + 1))
-        k -n "$NAMESPACE_APPS" exec "$pod" -- \
-          test -s /var/run/secrets/openrouter/api-key -a -s /var/run/secrets/openrouter/model >/dev/null 2>&1 || ready=0
+        pod_key="$(k -n "$NAMESPACE_APPS" exec "$pod" -- \
+          cat /var/run/secrets/openrouter/api-key 2>/dev/null || true)"
+        pod_model="$(k -n "$NAMESPACE_APPS" exec "$pod" -- \
+          cat /var/run/secrets/openrouter/model 2>/dev/null || true)"
+        [[ "$pod_key" == "$OPENROUTER_EXPECTED_API_KEY" ]] || ready=0
+        [[ "$pod_model" == "$OPENROUTER_EXPECTED_MODEL" ]] || ready=0
       fi
     done < <(k -n "$NAMESPACE_APPS" get pods -l app.kubernetes.io/name=python-llm \
       --field-selector=status.phase=Running -o name)
     if [[ "$ready" -eq 1 && "$pod_count" -gt 0 ]]; then
+      print_openrouter_configuration "$pod_count"
       return 0
     fi
-    if (( attempt % 30 == 0 )); then
-      echo "Waiting for OpenRouter Secret projection (${attempt}s/120s)..." >&2
+    if (( max_attempts == 1 )); then
+      echo "OpenRouter Secret does not match every running python-llm pod." >&2
+      return 1
+    fi
+    if (( attempt % 15 == 0 )); then
+      echo "Waiting for exact OpenRouter Secret projection (${attempt}s/${max_attempts}s)..." >&2
     fi
     sleep 1
   done
-  echo "OpenRouter Secret was created but was not mounted by every python-llm pod after 120s" >&2
+  echo "OpenRouter Secret did not reach every python-llm pod after ${max_attempts}s" >&2
   return 1
+}
+
+update_openrouter_credentials() {
+  local requested_model="${1:-}" announce="${2:-true}" existing_key="" existing_model=""
+  if k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1; then
+    read_openrouter_secret
+    existing_key="$OPENROUTER_EXPECTED_API_KEY"
+    existing_model="$OPENROUTER_EXPECTED_MODEL"
+  fi
+
+  OPENROUTER_EXPECTED_API_KEY="${OPENROUTER_API_KEY:-$existing_key}"
+  OPENROUTER_EXPECTED_MODEL="${requested_model:-${OPENROUTER_MODEL:-$existing_model}}"
+  if [[ -z "$OPENROUTER_EXPECTED_API_KEY" || -z "$OPENROUTER_EXPECTED_MODEL" ]]; then
+    echo "Initial setup requires OPENROUTER_API_KEY and --model or OPENROUTER_MODEL." >&2
+    return 2
+  fi
+
+  apply_openrouter_secret
+  wait_for_openrouter_projection 120
+  [[ "$announce" == false ]] || echo "OpenRouter configuration updated."
+}
+
+cmd_openrouter() {
+  local action="${1:-}" model=""
+  shift || true
+  require_cluster
+  case "$action" in
+    update)
+      while [[ "$#" -gt 0 ]]; do
+        case "$1" in
+          --model) model="${2:-}"; shift 2 ;;
+          *) echo "unknown openrouter update option: $1" >&2; return 1 ;;
+        esac
+      done
+      update_openrouter_credentials "$model" true
+      ;;
+    verify)
+      [[ "$#" -eq 0 ]] || { echo "usage: poc openrouter verify" >&2; return 1; }
+      k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1 || {
+        echo "OpenRouter Secret does not exist. Run: poc openrouter update --model MODEL" >&2
+        return 2
+      }
+      read_openrouter_secret
+      wait_for_openrouter_projection 1
+      ;;
+    *)
+      echo "usage: poc openrouter update [--model MODEL] | verify" >&2
+      return 1
+      ;;
+  esac
 }
 
 cmd_retry() {
@@ -743,6 +843,7 @@ main() {
     doctor) cmd_doctor "$@" ;;
     build) cmd_build "$@" ;;
     bootstrap) cmd_bootstrap "$@" ;;
+    openrouter) cmd_openrouter "$@" ;;
     smoke)
       case "${1:-}" in
         --mock)

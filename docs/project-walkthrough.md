@@ -152,6 +152,26 @@ Before adding a persistent Toxiproxy fault, the CLI creates an independent clean
 ./cli/poc verify
 ```
 
+Manage real-provider credentials independently from a test run:
+
+```bash
+# Set both values on first use, or rotate the key and change the model together.
+OPENROUTER_API_KEY='new-key' ./cli/poc openrouter update --model openai/gpt-4o-mini
+
+# Rotate only the key; the existing model is retained.
+OPENROUTER_API_KEY='rotated-key' ./cli/poc openrouter update
+
+# Change only the model; the existing key is retained.
+./cli/poc openrouter update --model anthropic/claude-sonnet-4
+
+# Compare the Secret with every running python-llm pod and print safe values.
+./cli/poc openrouter verify
+```
+
+The API key is accepted through the environment rather than a command-line
+argument, keeping the literal key out of shell history and process arguments.
+Output includes the selected model and only a masked form of the key.
+
 For load, port-forward the Java service and run one scenario at a time:
 
 ```bash

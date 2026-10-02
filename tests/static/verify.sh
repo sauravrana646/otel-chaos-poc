@@ -52,6 +52,7 @@ grep -Fq 'load --scenario constant --provider mock --rps 2 --duration 1m' README
 grep -Fq 'constant-arrival-rate' tests/k6/constant.js
 grep -Fq 'POC_PROVIDER="$provider"' cli/poc
 grep -Fq 'ensure_openrouter_credentials' cli/poc
+grep -Fq 'OpenRouter Secret projection (${attempt}s/120s)' cli/poc
 grep -Fq 'openrouter:live)' cli/poc
 
 echo "static verification passed"

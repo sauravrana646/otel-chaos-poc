@@ -312,7 +312,7 @@ fetch_trace() {
   local trace_id="$1" output="$2" attempt queried=0
   k -n "$NAMESPACE_OBSERVABILITY" port-forward svc/tempo 13200:3200 >"${EVIDENCE_DIR}/port-forward-tempo.log" 2>&1 &
   TEMPO_PF_PID=$!
-  for attempt in $(seq 1 30); do
+  for attempt in $(seq 1 120); do
     if curl -fsS "http://127.0.0.1:13200/api/traces/${trace_id}" -o "$output" 2>/dev/null; then
       queried=1
       if assert_trace_services "$output" >/dev/null 2>&1; then
@@ -446,9 +446,12 @@ ensure_openrouter_credentials() {
     if [[ "$ready" -eq 1 && "$pod_count" -gt 0 ]]; then
       return 0
     fi
+    if (( attempt % 30 == 0 )); then
+      echo "Waiting for OpenRouter Secret projection (${attempt}s/120s)..." >&2
+    fi
     sleep 1
   done
-  echo "OpenRouter Secret was created but was not mounted by every python-llm pod" >&2
+  echo "OpenRouter Secret was created but was not mounted by every python-llm pod after 120s" >&2
   return 1
 }
 

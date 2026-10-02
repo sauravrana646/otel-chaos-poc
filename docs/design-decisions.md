@@ -44,13 +44,13 @@ Record of choices for the OrbStack OpenTelemetry + CloudNativePG + chaos POC. Up
 
 ## DD-006: Local LLM mock + bounded OpenRouter
 
-**Decision:** Default load/chaos against a deterministic OpenAI-compatible mock. OpenRouter only for ≤5 smoke requests, concurrency 1, no retries, no chaos.
+**Decision:** Every request defaults to the deterministic OpenAI-compatible mock. A caller may explicitly select OpenRouter for smoke, controlled-RPS load, retry-policy, or chaos traffic. Provider selection travels in the request and never changes the Deployment profile.
 
 **Why:** Repeatable assertions (retry counts, latency) without external rate limits. Real-model path proves GenAI instrumentation without blocking the suite if the key is absent (report incomplete explicitly; never silent mock substitution).
 
-## DD-007: Retries only in the LLM service (mock profile)
+## DD-007: Retries only in the LLM service
 
-**Decision:** Max 3 attempts, backoff 100ms then 200ms + jitter, 2s per-attempt timeout; retry 429/503 and selected transient connection errors. Disable SDK built-in retries. No automatic DB write retries. OpenRouter: single attempt, 30s timeout.
+**Decision:** Max 3 attempts with 100ms then 200ms + jitter; retry 429/503 and selected transient connection errors. Mock attempts have a 2-second timeout and OpenRouter attempts have a 10-second timeout. Disable SDK built-in retries. No automatic DB write retries.
 
 **Why:** Makes retry spans and exhaustion behavior assertable under one inbound trace.
 

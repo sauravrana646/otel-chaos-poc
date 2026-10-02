@@ -47,7 +47,7 @@ spec:
       value: "healthz,readyz"
   python:
     # Built locally by ./cli/poc build — replace tag after first build
-    image: otel-poc/python-instrumentation-web:work-20261002053536
+    image: otel-poc/python-instrumentation-web:work-20261002062710
 ---
 apiVersion: opentelemetry.io/v1alpha1
 kind: Instrumentation
@@ -75,4 +75,4 @@ spec:
     - name: OTEL_PYTHON_FASTAPI_EXCLUDED_URLS
       value: "healthz,readyz"
   python:
-    image: otel-poc/python-instrumentation-genai:work-20261002053536
+    image: otel-poc/python-instrumentation-genai:work-20261002062710

@@ -28,6 +28,7 @@ class AnalyzeRequest(BaseModel):
     name: str
     category: str
     scenario: str = "normal"
+    provider: str = "mock"
 
 
 class AnalyzeResponse(BaseModel):
@@ -52,6 +53,8 @@ def readyz() -> dict[str, str]:
 def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
     if body.scenario not in ALLOWED_SCENARIOS:
         raise HTTPException(status_code=400, detail="scenario not allowlisted")
+    if body.provider not in {"mock", "openrouter"}:
+        raise HTTPException(status_code=400, detail="provider not allowlisted")
 
     context = _load_context(body.item_id, body.scenario)
     payload = {
@@ -61,6 +64,7 @@ def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
         "category": body.category,
         "context": context,
         "scenario": body.scenario,
+        "provider": body.provider,
     }
 
     try:

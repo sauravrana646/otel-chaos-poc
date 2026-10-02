@@ -3,6 +3,7 @@ import { check } from 'k6';
 import exec from 'k6/execution';
 
 const BASE = __ENV.JAVA_API_BASE || 'http://127.0.0.1:8080';
+const PROVIDER = __ENV.POC_PROVIDER || 'mock';
 
 export const options = {
   scenarios: {
@@ -53,6 +54,7 @@ function request(scenario) {
       request_id: requestId,
       item_id: 'item-100',
       scenario: 'normal',
+      provider: PROVIDER,
     }),
     {
       headers: { 'Content-Type': 'application/json' },

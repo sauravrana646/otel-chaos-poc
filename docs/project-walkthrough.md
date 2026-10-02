@@ -62,7 +62,7 @@ Its default 35-second dependency timeout is deliberately longer than the LLM ser
 
 `POST /generate` first checks `recommendations` by `request_id`. If a result exists, it returns it, which makes requests idempotent.
 
-The mock profile permits three explicit attempts. It retries connection errors, HTTP 429, and HTTP 503 with short backoff. The OpenRouter profile permits one 30-second attempt. Both cap the response at 128 tokens. Streaming requests consume each SDK chunk before persisting the assembled result.
+The request chooses `mock` by default or `openrouter` explicitly. Both permit three attempts for connection errors, HTTP 429, and HTTP 503 with short backoff. Mock attempts time out after 2 seconds and OpenRouter attempts after 10 seconds, keeping the complete retry budget below the analysis service's 35-second deadline. Both cap the response at 128 tokens.
 
 ### 4. LLM mock
 
@@ -146,6 +146,9 @@ Before adding a persistent Toxiproxy fault, the CLI creates an independent clean
 ./cli/poc smoke --mock --scenario retry-success
 ./cli/poc smoke --mock --scenario retry-exhaust
 ./cli/poc smoke --mock --scenario stream
+./cli/poc retry --provider mock --scenario success
+./cli/poc retry --provider mock --scenario exhaust
+./cli/poc retry --provider openrouter --scenario live
 ./cli/poc verify
 ```
 
@@ -155,12 +158,15 @@ For load, port-forward the Java service and run one scenario at a time:
 kubectl --context orbstack -n otel-poc-apps port-forward svc/java-api 8080:8080
 ./cli/poc load --scenario baseline
 ./cli/poc load --scenario spike
+./cli/poc load --scenario constant --provider mock --rps 1 --duration 30s
+./cli/poc load --scenario constant --provider mock --rps 2 --duration 1m
+./cli/poc load --scenario constant --provider openrouter --rps 3 --duration 2m
 ```
 
 For a fault, start traffic, activate one scenario, and confirm both failure and recovery:
 
 ```bash
-POC_FAULT_TTL_SECONDS=60 ./cli/poc fault --scenario latency
+POC_FAULT_TTL_SECONDS=60 ./cli/poc fault --scenario latency --provider mock
 ./cli/poc reset
 ./cli/poc verify
 ```

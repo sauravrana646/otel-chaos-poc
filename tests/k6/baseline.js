@@ -4,6 +4,7 @@ import exec from 'k6/execution';
 
 // Target via kubectl port-forward or OrbStack service URL.
 const BASE = __ENV.JAVA_API_BASE || 'http://127.0.0.1:8080';
+const PROVIDER = __ENV.POC_PROVIDER || 'mock';
 
 export const options = {
   scenarios: {
@@ -30,6 +31,7 @@ export default function () {
     request_id: requestId,
     item_id: 'item-100',
     scenario: 'normal',
+    provider: PROVIDER,
   });
   const res = http.post(`${BASE}/api/recommendations`, payload, {
     headers: { 'Content-Type': 'application/json' },

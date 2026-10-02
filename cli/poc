@@ -24,7 +24,6 @@ FAULT_TTL_SECONDS="${POC_FAULT_TTL_SECONDS:-60}"
 SYNC_TIMEOUT_SECONDS="${POC_SYNC_TIMEOUT_SECONDS:-300}"
 SMOKE_PF_PID=""
 TEMPO_PF_PID=""
-OPENROUTER_ACTIVE=0
 
 usage() {
   cat <<'EOF'
@@ -36,8 +35,12 @@ Commands:
   bootstrap                      Create and strictly sync the Argo CD applications
   smoke --mock [--scenario NAME] Run normal, retry-success, retry-exhaust, or stream
   smoke --openrouter             Run exactly five sequential real-provider requests
-  load --scenario NAME           Run k6 baseline or spike/recovery scenario
-  fault --scenario NAME          Activate db-outage, db-restart, latency, or app-restart
+  retry --provider NAME --scenario NAME
+                                 Mock: success|exhaust; OpenRouter: live
+  load --scenario NAME --provider mock|openrouter
+                                 Run baseline, spike, or configurable constant RPS
+  fault --scenario NAME --provider mock|openrouter
+                                 Activate db-outage, db-restart, latency, or app-restart
   verify                         Assert GitOps, workloads, monitoring, and smoke evidence
   reset                          Remove known proxy toxics and reset the mock
   destroy                        Remove stateless POC apps; retain PostgreSQL and telemetry
@@ -98,23 +101,8 @@ cleanup_tempo_port_forward() {
   fi
 }
 
-restore_openrouter_profile() {
-  if [[ "$OPENROUTER_ACTIVE" -eq 1 ]]; then
-    echo "Restoring the deterministic mock provider profile..."
-    k -n "$NAMESPACE_APPS" set env deployment/python-llm \
-      PROVIDER_BASE_URL=http://llm-mock:8080/v1 \
-      PROVIDER_API_KEY=mock-key PROVIDER_MODEL=mock-gpt LLM_PROFILE=mock >/dev/null || true
-    k -n "$NAMESPACE_APPS" rollout status deployment/python-llm --timeout=120s >/dev/null || true
-    k -n "$ARGOCD_NS" patch application otel-poc-apps --type merge \
-      -p '{"spec":{"syncPolicy":{"automated":{"prune":true,"selfHeal":true}}}}' >/dev/null || true
-    k -n "$NAMESPACE_APPS" delete secret openrouter --ignore-not-found >/dev/null || true
-    OPENROUTER_ACTIVE=0
-  fi
-}
-
 cleanup() {
   cleanup_port_forwards
-  restore_openrouter_profile
 }
 trap cleanup EXIT INT TERM
 
@@ -363,7 +351,7 @@ assert_trace_services() {
 }
 
 run_smoke_request() {
-  local scenario="$1" suffix="${2:-one}" rid trace_id span_id response repeat_response status expected trace_file stats
+  local scenario="$1" suffix="${2:-one}" provider="${3:-mock}" rid trace_id span_id response repeat_response status expected trace_file stats
   rid="smoke-${scenario}-$(date +%s)-${suffix}"
   trace_id="$(printf '%s' "$rid" | shasum -a 256 | cut -c1-32)"
   span_id="$(printf '%s-span' "$rid" | shasum -a 256 | cut -c1-16)"
@@ -375,7 +363,7 @@ run_smoke_request() {
   status="$(curl -sS -o "$response" -w '%{http_code}' -X POST http://127.0.0.1:18080/api/recommendations \
     -H 'content-type: application/json' \
     -H "traceparent: 00-${trace_id}-${span_id}-01" \
-    -d "{\"request_id\":\"${rid}\",\"item_id\":\"item-100\",\"scenario\":\"${scenario}\"}")"
+    -d "{\"request_id\":\"${rid}\",\"item_id\":\"item-100\",\"scenario\":\"${scenario}\",\"provider\":\"${provider}\"}")"
   if [[ "$status" != "$expected" ]]; then
     echo "expected HTTP ${expected}, received ${status}; response: ${response}" >&2
     return 1
@@ -385,14 +373,14 @@ run_smoke_request() {
     repeat_response="${EVIDENCE_DIR}/${rid}.repeat.json"
     curl -fsS -X POST http://127.0.0.1:18080/api/recommendations \
       -H 'content-type: application/json' \
-      -d "{\"request_id\":\"${rid}\",\"item_id\":\"item-100\",\"scenario\":\"${scenario}\"}" \
+      -d "{\"request_id\":\"${rid}\",\"item_id\":\"item-100\",\"scenario\":\"${scenario}\",\"provider\":\"${provider}\"}" \
       -o "$repeat_response"
     cmp "$response" "$repeat_response" || {
       echo "idempotent repeat returned a different response" >&2
       return 1
     }
   fi
-  if [[ "$scenario" == "retry-success" || "$scenario" == "retry-exhaust" ]]; then
+  if [[ "$provider" == "mock" && ( "$scenario" == "retry-success" || "$scenario" == "retry-exhaust" ) ]]; then
     stats="$(k -n "$NAMESPACE_APPS" exec deploy/llm-mock -- python -c \
       "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:8080/admin/stats/${rid}').read().decode())")"
     printf '%s' "$stats" | grep -Eq '"attempts"[[:space:]]*:[[:space:]]*3' || {
@@ -402,9 +390,9 @@ run_smoke_request() {
   fi
   fetch_trace "$trace_id" "$trace_file"
   assert_trace_services "$trace_file"
-  printf '{"request_id":"%s","scenario":"%s","trace_id":"%s","http_status":%s,"trace_file":"%s"}\n' \
-    "$rid" "$scenario" "$trace_id" "$status" "$trace_file" >"${EVIDENCE_DIR}/last-smoke.json"
-  echo "Smoke passed: scenario=${scenario} status=${status} trace_id=${trace_id}"
+  printf '{"request_id":"%s","scenario":"%s","provider":"%s","trace_id":"%s","http_status":%s,"trace_file":"%s"}\n' \
+    "$rid" "$scenario" "$provider" "$trace_id" "$status" "$trace_file" >"${EVIDENCE_DIR}/last-smoke.json"
+  echo "Smoke passed: provider=${provider} scenario=${scenario} status=${status} trace_id=${trace_id}"
 }
 
 cmd_smoke_mock() {
@@ -412,47 +400,138 @@ cmd_smoke_mock() {
   local scenario="${1:-normal}"
   case "$scenario" in normal|retry-success|retry-exhaust|stream) ;; *) echo "unsupported mock scenario: $scenario" >&2; return 1 ;; esac
   start_java_port_forward
-  run_smoke_request "$scenario"
+  run_smoke_request "$scenario" one mock
   cleanup_port_forwards
 }
 
 cmd_smoke_openrouter() {
   require_cluster
   need curl
-  if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_MODEL:-}" ]]; then
-    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required." >&2
-    return 2
-  fi
-  k -n "$NAMESPACE_APPS" create secret generic openrouter \
-    --from-literal=PROVIDER_API_KEY="$OPENROUTER_API_KEY" \
-    --dry-run=client -o yaml | k apply -f -
-  k -n "$ARGOCD_NS" patch application otel-poc-apps --type merge \
-    -p '{"spec":{"syncPolicy":{"automated":null}}}' >/dev/null
-  k -n "$NAMESPACE_APPS" set env deployment/python-llm --from=secret/openrouter >/dev/null
-  k -n "$NAMESPACE_APPS" set env deployment/python-llm \
-    PROVIDER_BASE_URL=https://openrouter.ai/api/v1 PROVIDER_MODEL="$OPENROUTER_MODEL" LLM_PROFILE=openrouter >/dev/null
-  OPENROUTER_ACTIVE=1
-  k -n "$NAMESPACE_APPS" rollout status deployment/python-llm --timeout=120s
+  ensure_openrouter_credentials
 
   start_java_port_forward
   local i
   for i in 1 2 3 4 5; do
-    run_smoke_request normal "openrouter-${i}"
+    run_smoke_request normal "openrouter-${i}" openrouter
   done
   cleanup_port_forwards
-  restore_openrouter_profile
-  echo "OpenRouter smoke completed with five sequential requests and the mock profile was restored."
+  echo "OpenRouter smoke completed with five sequential requests. Requests without --provider openrouter still use mock."
+}
+
+ensure_openrouter_credentials() {
+  local attempt pod ready pod_count
+  if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_MODEL:-}" ]]; then
+    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required for --provider openrouter." >&2
+    return 2
+  fi
+  k -n "$NAMESPACE_APPS" create secret generic openrouter \
+    --from-literal=api-key="$OPENROUTER_API_KEY" \
+    --from-literal=model="$OPENROUTER_MODEL" \
+    --dry-run=client -o yaml | k apply -f - >/dev/null
+  for attempt in $(seq 1 30); do
+    ready=1
+    pod_count=0
+    while IFS= read -r pod; do
+      if [[ -n "$pod" ]]; then
+        pod_count=$((pod_count + 1))
+        k -n "$NAMESPACE_APPS" exec "$pod" -- \
+          test -s /var/run/secrets/openrouter/api-key -a -s /var/run/secrets/openrouter/model >/dev/null 2>&1 || ready=0
+      fi
+    done < <(k -n "$NAMESPACE_APPS" get pods -l app.kubernetes.io/name=python-llm \
+      --field-selector=status.phase=Running -o name)
+    if [[ "$ready" -eq 1 && "$pod_count" -gt 0 ]]; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "OpenRouter Secret was created but was not mounted by every python-llm pod" >&2
+  return 1
+}
+
+cmd_retry() {
+  local provider="" scenario=""
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --provider) provider="${2:-}"; shift 2 ;;
+      --scenario) scenario="${2:-}"; shift 2 ;;
+      *) echo "unknown retry option: $1" >&2; return 1 ;;
+    esac
+  done
+  case "$provider:$scenario" in
+    mock:success) cmd_smoke_mock retry-success ;;
+    mock:exhaust) cmd_smoke_mock retry-exhaust ;;
+    openrouter:live)
+      require_cluster
+      ensure_openrouter_credentials
+      start_java_port_forward
+      run_smoke_request normal openrouter-live-retry-policy openrouter
+      cleanup_port_forwards
+      echo "OpenRouter live request passed; up to three attempts are enabled for genuine 429, 503, or connection failures."
+      ;;
+    *)
+      echo "usage: poc retry --provider mock --scenario success|exhaust" >&2
+      echo "   or: poc retry --provider openrouter --scenario live" >&2
+      return 1
+      ;;
+  esac
 }
 
 cmd_load() {
-  local scenario="${1:-}"
+  local scenario="${1:-}" provider="mock" rps="" duration="" summary script load_base
+  shift || true
   need k6
   mkdir -p "$EVIDENCE_DIR"
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --provider) provider="${2:-}"; shift 2 ;;
+      --rps) rps="${2:-}"; shift 2 ;;
+      --duration) duration="${2:-}"; shift 2 ;;
+      *) echo "unknown load option: $1" >&2; return 1 ;;
+    esac
+  done
   case "$scenario" in
-    baseline) k6 run --summary-export "${EVIDENCE_DIR}/k6-baseline.json" tests/k6/baseline.js ;;
-    spike) k6 run --summary-export "${EVIDENCE_DIR}/k6-spike.json" tests/k6/spike.js ;;
-    *) echo "unknown load scenario: $scenario (baseline|spike)" >&2; return 1 ;;
+    baseline)
+      [[ -z "$rps" && -z "$duration" ]] || { echo "baseline has fixed rate and duration; use constant for --rps/--duration" >&2; return 1; }
+      summary="${EVIDENCE_DIR}/k6-baseline.json"
+      script=tests/k6/baseline.js
+      ;;
+    spike)
+      [[ -z "$rps" && -z "$duration" ]] || { echo "spike has fixed stages; use constant for --rps/--duration" >&2; return 1; }
+      summary="${EVIDENCE_DIR}/k6-spike.json"
+      script=tests/k6/spike.js
+      ;;
+    constant)
+      [[ "$rps" =~ ^[1-9][0-9]*$ ]] || { echo "--rps must be a positive integer" >&2; return 1; }
+      [[ "$duration" =~ ^[1-9][0-9]*(s|m|h)$ ]] || { echo "--duration must look like 30s, 2m, or 1h" >&2; return 1; }
+      summary="${EVIDENCE_DIR}/k6-constant-${rps}rps-$(date -u +%Y%m%d%H%M%S).json"
+      script=tests/k6/constant.js
+      ;;
+    *) echo "unknown load scenario: $scenario (baseline|spike|constant)" >&2; return 1 ;;
   esac
+
+  [[ "$provider" == "mock" || "$provider" == "openrouter" ]] || {
+    echo "--provider must be mock or openrouter" >&2
+    return 1
+  }
+  require_cluster
+  if [[ "$provider" == "openrouter" ]]; then
+    ensure_openrouter_credentials
+  fi
+
+  load_base="${JAVA_API_BASE:-}"
+  if [[ -z "$load_base" ]]; then
+    start_java_port_forward
+    load_base=http://127.0.0.1:18080
+  fi
+
+  if [[ "$scenario" == "constant" ]]; then
+    JAVA_API_BASE="$load_base" POC_PROVIDER="$provider" POC_RPS="$rps" POC_DURATION="$duration" \
+      k6 run --summary-export "$summary" "$script"
+  else
+    JAVA_API_BASE="$load_base" POC_PROVIDER="$provider" k6 run --summary-export "$summary" "$script"
+  fi
+  cleanup_port_forwards
+  echo "k6 summary: ${summary}"
 }
 
 schedule_toxic_cleanup() {
@@ -492,7 +571,19 @@ toxiproxy() {
 
 cmd_fault() {
   require_cluster
-  local scenario="${1:-}" pod
+  local scenario="${1:-}" provider="mock" pod
+  shift || true
+  while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+      --provider) provider="${2:-}"; shift 2 ;;
+      *) echo "unknown fault option: $1" >&2; return 1 ;;
+    esac
+  done
+  [[ "$provider" == "mock" || "$provider" == "openrouter" ]] || {
+    echo "--provider must be mock or openrouter" >&2
+    return 1
+  }
+  if [[ "$provider" == "openrouter" ]]; then ensure_openrouter_credentials; fi
   case "$scenario" in
     db-outage)
       schedule_toxic_cleanup postgres db-outage
@@ -656,12 +747,15 @@ main() {
       esac
       ;;
     load)
-      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc load --scenario NAME" >&2; return 1; }
-      cmd_load "${2:-}"
+      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc load --scenario baseline|spike|constant [--rps N --duration 30s|2m|1h]" >&2; return 1; }
+      shift
+      cmd_load "$@"
       ;;
-    fault)
-      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc fault --scenario NAME" >&2; return 1; }
-      cmd_fault "${2:-}"
+    retry) cmd_retry "$@" ;;
+    fault|chaos)
+      [[ "${1:-}" == "--scenario" ]] || { echo "usage: poc fault --scenario NAME --provider mock|openrouter" >&2; return 1; }
+      shift
+      cmd_fault "$@"
       ;;
     verify) cmd_verify "$@" ;;
     reset) cmd_reset "$@" ;;

@@ -23,6 +23,7 @@ public class RecommendationsController {
   private static final Logger log = LoggerFactory.getLogger(RecommendationsController.class);
   private static final Set<String> ALLOWED_SCENARIOS =
       Set.of("normal", "slow-db", "retry-success", "retry-exhaust", "stream");
+  private static final Set<String> ALLOWED_PROVIDERS = Set.of("mock", "openrouter");
 
   private final JdbcTemplate jdbc;
   private final RestClient analysisClient;
@@ -67,7 +68,8 @@ public class RecommendationsController {
     }
 
     AnalysisRequest analysisRequest =
-        new AnalysisRequest(req.requestId(), req.itemId(), item.name(), item.category(), req.scenario());
+        new AnalysisRequest(
+            req.requestId(), req.itemId(), item.name(), item.category(), req.scenario(), req.provider());
 
     try {
       AnalysisResponse analysis =
@@ -111,15 +113,23 @@ public class RecommendationsController {
     if (!ALLOWED_SCENARIOS.contains(scenario)) {
       throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "scenario not allowlisted");
     }
+    String provider = req.provider() == null || req.provider().isBlank() ? "mock" : req.provider();
+    if (!ALLOWED_PROVIDERS.contains(provider)) {
+      throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "provider not allowlisted");
+    }
   }
 
   public record RecommendationRequest(
       @JsonProperty("request_id") String requestId,
       @JsonProperty("item_id") String itemId,
-      String scenario) {
+      String scenario,
+      String provider) {
     public RecommendationRequest {
       if (scenario == null || scenario.isBlank()) {
         scenario = "normal";
+      }
+      if (provider == null || provider.isBlank()) {
+        provider = "mock";
       }
     }
   }
@@ -135,7 +145,8 @@ public class RecommendationsController {
       @JsonProperty("item_id") String itemId,
       String name,
       String category,
-      String scenario) {}
+      String scenario,
+      String provider) {}
 
   public record AnalysisResponse(String result, String model, String status) {}
 

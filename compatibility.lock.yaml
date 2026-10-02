@@ -55,14 +55,14 @@ python_instrumentation:
   openai_instrumentation: 2.1b0
 
 local_images:
-  tag: work-20261002053536
+  tag: work-20261002062710
   images:
-    java_api: otel-poc/java-api:work-20261002053536
-    python_analysis: otel-poc/python-analysis:work-20261002053536
-    python_llm: otel-poc/python-llm:work-20261002053536
-    llm_mock: otel-poc/llm-mock:work-20261002053536
-    python_instrumentation_web: otel-poc/python-instrumentation-web:work-20261002053536
-    python_instrumentation_genai: otel-poc/python-instrumentation-genai:work-20261002053536
+    java_api: otel-poc/java-api:work-20261002062710
+    python_analysis: otel-poc/python-analysis:work-20261002062710
+    python_llm: otel-poc/python-llm:work-20261002062710
+    llm_mock: otel-poc/llm-mock:work-20261002062710
+    python_instrumentation_web: otel-poc/python-instrumentation-web:work-20261002062710
+    python_instrumentation_genai: otel-poc/python-instrumentation-genai:work-20261002062710
 
 validation:
   status: gitops-and-smoke-passed

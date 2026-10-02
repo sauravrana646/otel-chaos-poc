@@ -1,10 +1,11 @@
-"""LLM service — retries for mock profile only; no OTel init in application code."""
+"""LLM service with per-request mock/OpenRouter selection and no OTel initialization."""
 
 from __future__ import annotations
 
 import os
 import random
 import time
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -18,12 +19,8 @@ DB_DSN = os.getenv(
     "DB_DSN",
     "postgresql://poc_app:poc_app@toxiproxy:5432/poc",
 )
-PROVIDER_BASE_URL = os.getenv("PROVIDER_BASE_URL", "http://llm-mock:8080/v1")
-PROVIDER_API_KEY = os.getenv("PROVIDER_API_KEY", "mock-key")
-PROVIDER_MODEL = os.getenv("PROVIDER_MODEL", "mock-gpt")
-PROFILE = os.getenv("LLM_PROFILE", "mock")  # mock | openrouter
-MAX_ATTEMPTS = 1 if PROFILE == "openrouter" else 3
-ATTEMPT_TIMEOUT = 30.0 if PROFILE == "openrouter" else 2.0
+MOCK_BASE_URL = os.getenv("PROVIDER_BASE_URL", "http://llm-mock:8080/v1")
+OPENROUTER_SECRET_DIR = Path(os.getenv("OPENROUTER_SECRET_DIR", "/var/run/secrets/openrouter"))
 BACKOFF_MS = (100, 200)
 DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 
@@ -35,6 +32,7 @@ class GenerateRequest(BaseModel):
     category: str
     context: str
     scenario: str = "normal"
+    provider: str = "mock"
 
 
 class GenerateResponse(BaseModel):
@@ -61,11 +59,12 @@ def generate(body: GenerateRequest) -> GenerateResponse:
     if existing is not None:
         return GenerateResponse(result=existing["result"], model=existing["model"], status="ok")
 
+    api_key, base_url, provider_model, max_attempts, attempt_timeout = _provider_config(body.provider)
     client = OpenAI(
-        api_key=PROVIDER_API_KEY,
-        base_url=PROVIDER_BASE_URL,
+        api_key=api_key,
+        base_url=base_url,
         max_retries=0,
-        timeout=ATTEMPT_TIMEOUT,
+        timeout=attempt_timeout,
     )
 
     prompt = (
@@ -75,14 +74,14 @@ def generate(body: GenerateRequest) -> GenerateResponse:
 
     last_error: Exception | None = None
     completion_text = ""
-    model_name = PROVIDER_MODEL
+    model_name = provider_model
 
-    for attempt in range(1, MAX_ATTEMPTS + 1):
+    for attempt in range(1, max_attempts + 1):
         try:
             extra_headers = {"X-Request-Id": body.request_id, "X-POC-Scenario": body.scenario}
             streaming = body.scenario == "stream"
             resp = client.chat.completions.create(
-                model=PROVIDER_MODEL,
+                model=provider_model,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=128,
                 extra_headers=extra_headers,
@@ -97,13 +96,13 @@ def generate(body: GenerateRequest) -> GenerateResponse:
                 completion_text = "".join(parts).strip()
             else:
                 completion_text = resp.choices[0].message.content or ""
-                model_name = resp.model or PROVIDER_MODEL
+                model_name = resp.model or provider_model
             last_error = None
             break
         except (APIStatusError, APIConnectionError) as exc:
             last_error = exc
             retryable = _retryable(exc)
-            if not retryable or attempt >= MAX_ATTEMPTS:
+            if not retryable or attempt >= max_attempts:
                 break
             delay = BACKOFF_MS[min(attempt - 1, len(BACKOFF_MS) - 1)] / 1000.0
             delay += random.uniform(0, 0.05)
@@ -114,6 +113,24 @@ def generate(body: GenerateRequest) -> GenerateResponse:
 
     _persist(body.request_id, body.item_id, completion_text, model_name)
     return GenerateResponse(result=completion_text, model=model_name, status="ok")
+
+
+def _provider_config(provider: str) -> tuple[str, str, str, int, float]:
+    if provider == "mock":
+        return "mock-key", MOCK_BASE_URL, "mock-gpt", 3, 2.0
+    if provider != "openrouter":
+        raise HTTPException(status_code=400, detail="provider not allowlisted")
+    key_path = OPENROUTER_SECRET_DIR / "api-key"
+    model_path = OPENROUTER_SECRET_DIR / "model"
+    if not key_path.is_file() or not model_path.is_file():
+        raise HTTPException(status_code=503, detail="OpenRouter credentials are not configured")
+    return (
+        key_path.read_text().strip(),
+        "https://openrouter.ai/api/v1",
+        model_path.read_text().strip(),
+        3,
+        10.0,
+    )
 
 
 def _retryable(exc: Exception) -> bool:

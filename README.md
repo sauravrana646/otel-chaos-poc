@@ -57,7 +57,10 @@ cat compatibility.lock.yaml
 
 # 5. Load / fault scenarios (one at a time)
 ./cli/poc load --scenario spike
-./cli/poc fault --scenario db-outage
+./cli/poc load --scenario constant --provider mock --rps 2 --duration 1m
+./cli/poc fault --scenario db-outage --provider mock
+./cli/poc retry --provider mock --scenario success
+./cli/poc retry --provider openrouter --scenario live
 
 # 6. Optional real-model smoke
 ./cli/poc smoke --openrouter
@@ -66,6 +69,8 @@ cat compatibility.lock.yaml
 ./cli/poc verify
 ./cli/poc reset
 ```
+
+Provider selection is per request. Commands use the mock unless `--provider openrouter` is present; selecting OpenRouter does not mutate or roll out the application Deployment.
 
 Stateless teardown retains PostgreSQL and observability data. Data deletion is a separate explicit operation:
 

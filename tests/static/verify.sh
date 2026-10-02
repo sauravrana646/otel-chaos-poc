@@ -47,5 +47,10 @@ grep -Fq 'activeDeadlineSeconds:' cli/poc
 grep -Fq 'POC_KUBE_CONTEXT' cli/poc
 grep -Fq 'filter/drop_health:' platform/observability/collector.yaml
 grep -Fq 'remained incomplete in Tempo after 30s' cli/poc
+grep -Fq 'load --scenario constant --provider mock --rps 2 --duration 1m' README.md
+grep -Fq 'constant-arrival-rate' tests/k6/constant.js
+grep -Fq 'POC_PROVIDER="$provider"' cli/poc
+grep -Fq 'ensure_openrouter_credentials' cli/poc
+grep -Fq 'openrouter:live)' cli/poc
 
 echo "static verification passed"

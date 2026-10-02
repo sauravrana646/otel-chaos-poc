@@ -235,10 +235,21 @@ wait_for_application() {
 }
 
 sync_app() {
-  local app="$1"
+  local app="$1" previous_started current_started operation elapsed=0
   echo "Syncing Application/${app} using its declared targetRevision..."
+  previous_started="$(k -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
+  k -n "$ARGOCD_NS" patch application "$app" --type merge -p '{"operation":null}' >/dev/null
   k -n "$ARGOCD_NS" patch application "$app" --type merge \
     -p '{"operation":{"initiatedBy":{"username":"poc-cli"},"sync":{}}}' >/dev/null
+  while (( elapsed < 30 )); do
+    operation="$(k -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.operationState.phase}' 2>/dev/null || true)"
+    current_started="$(k -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.operationState.startedAt}' 2>/dev/null || true)"
+    if [[ "$operation" == "Running" || ( -n "$current_started" && "$current_started" != "$previous_started" ) ]]; then
+      break
+    fi
+    sleep 1
+    elapsed=$((elapsed + 1))
+  done
   wait_for_application "$app"
 }
 

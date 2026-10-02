@@ -33,6 +33,7 @@ if command -v ruby >/dev/null 2>&1; then
 fi
 
 ! grep -Fq '"revision":"HEAD"' cli/poc
+grep -Fq "'{\"operation\":null}'" cli/poc
 ! grep -Fq 'toxic remove postgres all' cli/poc
 ! grep -Fq 'metrics_generator:' platform/observability/tempo.yaml
 ! grep -Fq 'pip install --no-cache-dir opentelemetry-distro -t /autoinstrumentation' instrumentation/python-web/Dockerfile

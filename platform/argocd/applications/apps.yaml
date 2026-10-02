@@ -95,6 +95,43 @@ spec:
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
+  name: otel-poc-jaeger
+  namespace: argocd
+  annotations:
+    poc.otel/bootstrap-order: "40"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
+spec:
+  project: otel-chaos-poc
+  source:
+    repoURL: https://jaegertracing.github.io/helm-charts
+    chart: jaeger
+    targetRevision: 4.12.0
+    helm:
+      releaseName: jaeger
+      valuesObject:
+        jaeger:
+          replicas: 1
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: otel-poc-observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
   name: otel-poc-observability
   namespace: argocd
   annotations:

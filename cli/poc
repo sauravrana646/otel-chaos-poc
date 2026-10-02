@@ -283,6 +283,7 @@ cmd_bootstrap() {
     otel-poc-namespaces \
     otel-poc-cnpg-operator \
     otel-poc-otel-operator \
+    otel-poc-jaeger \
     otel-poc-observability \
     otel-poc-instrumentation \
     otel-poc-cnpg-cluster \
@@ -751,7 +752,7 @@ cmd_verify() {
   require_cluster
   local failed=0 app sync health
   for app in otel-poc-namespaces otel-poc-cnpg-operator otel-poc-otel-operator \
-    otel-poc-observability otel-poc-instrumentation otel-poc-cnpg-cluster \
+    otel-poc-jaeger otel-poc-observability otel-poc-instrumentation otel-poc-cnpg-cluster \
     otel-poc-toxiproxy otel-poc-apps otel-poc-dashboards
   do
     sync="$(k -n "$ARGOCD_NS" get application "$app" -o jsonpath='{.status.sync.status}' 2>/dev/null || echo Missing)"
@@ -814,7 +815,7 @@ cmd_destroy() {
     [[ "$answer" == "delete-poc-data" ]] || { echo "Aborted."; return 1; }
     delete_app_orphan otel-poc-root
     for app in otel-poc-dashboards otel-poc-apps otel-poc-toxiproxy otel-poc-cnpg-cluster \
-      otel-poc-instrumentation otel-poc-observability otel-poc-otel-operator \
+      otel-poc-instrumentation otel-poc-observability otel-poc-jaeger otel-poc-otel-operator \
       otel-poc-cnpg-operator otel-poc-namespaces; do
       delete_app_cascade "$app"
     done

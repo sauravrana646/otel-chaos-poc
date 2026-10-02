@@ -51,6 +51,15 @@ data:
         endpoint: tempo.otel-poc-observability.svc:4317
         tls:
           insecure: true
+      otlp/jaeger:
+        endpoint: jaeger.otel-poc-observability.svc:4317
+        tls:
+          insecure: true
+        sending_queue:
+          enabled: true
+          queue_size: 1024
+        retry_on_failure:
+          enabled: true
       otlphttp/loki:
         endpoint: http://loki.otel-poc-observability.svc:3100/otlp
         tls:
@@ -66,7 +75,7 @@ data:
         traces:
           receivers: [otlp]
           processors: [memory_limiter, filter/drop_health, resource, batch]
-          exporters: [otlp/tempo, spanmetrics, servicegraph]
+          exporters: [otlp/tempo, otlp/jaeger, spanmetrics, servicegraph]
         metrics:
           receivers: [otlp, spanmetrics, servicegraph]
           processors: [memory_limiter, resource, batch]
@@ -90,6 +99,8 @@ spec:
       app.kubernetes.io/name: otel-collector
   template:
     metadata:
+      annotations:
+        checksum/collector-config: "826c45bf300d09f0a5c550540b720400e11b93182567f743ebd472841200eda2"
       labels:
         app.kubernetes.io/name: otel-collector
     spec:

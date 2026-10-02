@@ -9,7 +9,7 @@ The platform owns instrumentation packaging, injection, configuration, and compa
 - End-to-end traces: Java API → Python analysis → LLM service → PostgreSQL client spans (+ GenAI outbound calls)
 - OpenTelemetry Operator auto-injection (Java + custom Python images)
 - CloudNativePG-managed PostgreSQL (metrics, structured logs, restart recovery)
-- Tempo + Loki beside existing Grafana / Prometheus
+- Tempo + Jaeger + Loki beside existing Grafana / Prometheus
 - k6 load + Toxiproxy faults + scoped pod restarts
 - Bounded OpenRouter smoke (optional) vs local deterministic LLM mock
 
@@ -114,7 +114,7 @@ Public contract fields: `request_id`, `item_id`, `scenario` (allowlisted). Healt
 |-----------|----------|
 | `otel-poc-system` | OpenTelemetry Operator |
 | `otel-poc-cnpg-system` | CloudNativePG Operator |
-| `otel-poc-observability` | Collector, Tempo, Loki, DB log collector |
+| `otel-poc-observability` | Collector, Tempo, Jaeger, Loki, DB log collector |
 | `otel-poc-apps` | Apps, CNPG cluster, mock, Toxiproxy |
 | `otel-poc-tests` | k6 / fault Jobs |
 
@@ -145,3 +145,17 @@ Tempo's `local-blocks` processor is enabled specifically for the TraceQL
 metrics queries used by Traces Drilldown. Prometheus span metrics and service
 graphs continue to come from the central OpenTelemetry Collector, avoiding
 duplicate metric series.
+
+## Explore traces in Jaeger UI
+
+The collector sends each trace to both Tempo and Jaeger. Start the local UI:
+
+```bash
+kubectl --context orbstack -n otel-poc-observability port-forward svc/jaeger 16686:16686
+```
+
+Open [Jaeger UI](http://localhost:16686), select `java-api` under **Service**,
+and search for a recent request. You can also open a known trace directly at
+`http://localhost:16686/trace/<trace-id>`. Jaeger's local all-in-one storage
+is in memory, so its traces disappear when the pod restarts;
+Tempo remains the retained trace store for this POC.

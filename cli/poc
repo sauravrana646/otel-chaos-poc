@@ -420,14 +420,18 @@ cmd_smoke_openrouter() {
 
 ensure_openrouter_credentials() {
   local attempt pod ready pod_count
-  if [[ -z "${OPENROUTER_API_KEY:-}" || -z "${OPENROUTER_MODEL:-}" ]]; then
-    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required for --provider openrouter." >&2
+  if [[ -n "${OPENROUTER_API_KEY:-}" && -n "${OPENROUTER_MODEL:-}" ]]; then
+    k -n "$NAMESPACE_APPS" create secret generic openrouter \
+      --from-literal=api-key="$OPENROUTER_API_KEY" \
+      --from-literal=model="$OPENROUTER_MODEL" \
+      --dry-run=client -o yaml | k apply -f - >/dev/null
+  elif [[ -n "${OPENROUTER_API_KEY:-}" || -n "${OPENROUTER_MODEL:-}" ]]; then
+    echo "Set both OPENROUTER_API_KEY and OPENROUTER_MODEL, or leave both unset to reuse the existing Secret." >&2
+    return 2
+  elif ! k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1; then
+    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required the first time --provider openrouter is used." >&2
     return 2
   fi
-  k -n "$NAMESPACE_APPS" create secret generic openrouter \
-    --from-literal=api-key="$OPENROUTER_API_KEY" \
-    --from-literal=model="$OPENROUTER_MODEL" \
-    --dry-run=client -o yaml | k apply -f - >/dev/null
   for attempt in $(seq 1 30); do
     ready=1
     pod_count=0

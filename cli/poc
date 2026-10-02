@@ -321,17 +321,26 @@ start_java_port_forward() {
 }
 
 fetch_trace() {
-  local trace_id="$1" output="$2" attempt
+  local trace_id="$1" output="$2" attempt queried=0
   k -n "$NAMESPACE_OBSERVABILITY" port-forward svc/tempo 13200:3200 >"${EVIDENCE_DIR}/port-forward-tempo.log" 2>&1 &
   TEMPO_PF_PID=$!
-  for attempt in $(seq 1 20); do
+  for attempt in $(seq 1 30); do
     if curl -fsS "http://127.0.0.1:13200/api/traces/${trace_id}" -o "$output" 2>/dev/null; then
-      cleanup_tempo_port_forward
-      return 0
+      queried=1
+      if assert_trace_services "$output" >/dev/null 2>&1; then
+        cleanup_tempo_port_forward
+        return 0
+      fi
     fi
     sleep 1
   done
-  echo "trace ${trace_id} was not queryable from Tempo" >&2
+  cleanup_tempo_port_forward
+  if [[ "$queried" -eq 1 ]]; then
+    echo "trace ${trace_id} remained incomplete in Tempo after 30s" >&2
+    assert_trace_services "$output" || true
+  else
+    echo "trace ${trace_id} was not queryable from Tempo" >&2
+  fi
   return 1
 }
 

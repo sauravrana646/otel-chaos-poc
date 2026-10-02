@@ -46,5 +46,6 @@ grep -Fq 'release: kube-prometheus-stack' platform/cnpg/cluster.yaml
 grep -Fq 'activeDeadlineSeconds:' cli/poc
 grep -Fq 'POC_KUBE_CONTEXT' cli/poc
 grep -Fq 'filter/drop_health:' platform/observability/collector.yaml
+grep -Fq 'remained incomplete in Tempo after 30s' cli/poc
 
 echo "static verification passed"

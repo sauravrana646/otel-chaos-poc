@@ -421,16 +421,15 @@ cmd_smoke_openrouter() {
 }
 
 ensure_openrouter_credentials() {
-  if [[ -n "${OPENROUTER_API_KEY:-}" || -n "${OPENROUTER_MODEL:-}" ]]; then
-    update_openrouter_credentials "${OPENROUTER_MODEL:-}" false
-    return
-  fi
   if ! k -n "$NAMESPACE_APPS" get secret openrouter >/dev/null 2>&1; then
-    echo "OPENROUTER_API_KEY and OPENROUTER_MODEL are required the first time --provider openrouter is used." >&2
+    echo "OpenRouter Secret does not exist. Run: poc openrouter update --model MODEL" >&2
     return 2
   fi
   read_openrouter_secret
-  wait_for_openrouter_projection 120
+  if ! wait_for_openrouter_projection 1; then
+    echo "Run 'poc openrouter update' to update the pods before starting a test." >&2
+    return 1
+  fi
 }
 
 read_openrouter_secret() {

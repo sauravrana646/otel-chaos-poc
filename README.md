@@ -83,7 +83,9 @@ from the existing Secret. Supply API keys through `OPENROUTER_API_KEY` so they
 do not appear in shell command arguments. Both `update` and `verify` compare the
 Secret with every running `python-llm` pod, then print the model and a masked
 key. OpenRouter load, retry, fault, and smoke commands perform the same exact
-projection check before sending traffic.
+projection check once and proceed immediately when it passes. Test commands do
+not update the Secret or wait for propagation; run `openrouter update` first
+when changing credentials.
 
 Stateless teardown retains PostgreSQL and observability data. Data deletion is a separate explicit operation:
 

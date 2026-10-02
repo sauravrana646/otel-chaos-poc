@@ -55,6 +55,7 @@ grep -Fq 'ensure_openrouter_credentials' cli/poc
 grep -Fq 'openrouter) cmd_openrouter "$@"' cli/poc
 grep -Fq 'OpenRouter API key: $(masked_value' cli/poc
 grep -Fq 'wait_for_openrouter_projection 120' cli/poc
+grep -Fq 'wait_for_openrouter_projection 1' cli/poc
 grep -Fq 'openrouter:live)' cli/poc
 
 echo "static verification passed"

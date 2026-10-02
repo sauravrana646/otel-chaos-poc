@@ -171,6 +171,8 @@ OPENROUTER_API_KEY='rotated-key' ./cli/poc openrouter update
 The API key is accepted through the environment rather than a command-line
 argument, keeping the literal key out of shell history and process arguments.
 Output includes the selected model and only a masked form of the key.
+OpenRouter test commands verify these mounted values once and start immediately
+when they match. They do not update credentials or wait for Secret propagation.
 
 For load, port-forward the Java service and run one scenario at a time:
 

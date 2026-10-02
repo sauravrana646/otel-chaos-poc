@@ -110,8 +110,66 @@ spec:
     helm:
       releaseName: jaeger
       valuesObject:
+        extraObjects:
+          - apiVersion: v1
+            kind: PersistentVolumeClaim
+            metadata:
+              name: jaeger-data
+              annotations:
+                argocd.argoproj.io/sync-wave: "-1"
+            spec:
+              accessModes: [ReadWriteOnce]
+              storageClassName: local-path
+              resources:
+                requests:
+                  storage: 5Gi
+        userconfig:
+          service:
+            extensions: [jaeger_storage, jaeger_query, healthcheckv2]
+            pipelines:
+              traces:
+                receivers: [otlp]
+                processors: [batch]
+                exporters: [jaeger_storage_exporter]
+          extensions:
+            healthcheckv2:
+              use_v2: true
+              http:
+                endpoint: 0.0.0.0:13133
+            jaeger_query:
+              storage:
+                traces: primary_store
+            jaeger_storage:
+              backends:
+                primary_store:
+                  badger:
+                    directories:
+                      keys: /badger/data/keys
+                      values: /badger/data/values
+                    ephemeral: false
+                    ttl:
+                      spans: 24h
+          receivers:
+            otlp:
+              protocols:
+                grpc:
+                  endpoint: 0.0.0.0:4317
+                http:
+                  endpoint: 0.0.0.0:4318
+          processors:
+            batch: {}
+          exporters:
+            jaeger_storage_exporter:
+              trace_storage: primary_store
         jaeger:
           replicas: 1
+          extraVolumes:
+            - name: badger-data
+              persistentVolumeClaim:
+                claimName: jaeger-data
+          extraVolumeMounts:
+            - name: badger-data
+              mountPath: /badger
           resources:
             requests:
               cpu: 100m

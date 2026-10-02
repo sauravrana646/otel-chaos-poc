@@ -156,6 +156,7 @@ kubectl --context orbstack -n otel-poc-observability port-forward svc/jaeger 166
 
 Open [Jaeger UI](http://localhost:16686), select `java-api` under **Service**,
 and search for a recent request. You can also open a known trace directly at
-`http://localhost:16686/trace/<trace-id>`. Jaeger's local all-in-one storage
-is in memory, so its traces disappear when the pod restarts;
-Tempo remains the retained trace store for this POC.
+`http://localhost:16686/trace/<trace-id>`. Jaeger stores spans in Badger on a
+5 GiB `local-path` PVC (`jaeger-data`), with a 24-hour TTL. Its traces survive
+Jaeger pod restarts while that PVC remains. The local Badger store is limited
+to one Jaeger replica in this POC.

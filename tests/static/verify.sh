@@ -34,6 +34,7 @@ fi
 
 ! grep -Fq '"revision":"HEAD"' cli/poc
 grep -Fq "'{\"operation\":null}'" cli/poc
+grep -Fq '"$operation" != "Running"' cli/poc
 ! grep -Fq 'toxic remove postgres all' cli/poc
 ! grep -Fq 'toxic list' cli/poc
 grep -Fq 'toxiproxy inspect "$proxy"' cli/poc

@@ -213,7 +213,7 @@ wait_for_application() {
       echo "Argo CD sync failed for ${app}: ${message}" >&2
       return 1
     fi
-    if [[ "$sync" == "Synced" && "$health" == "Healthy" ]]; then return 0; fi
+    if [[ "$sync" == "Synced" && "$health" == "Healthy" && "$operation" != "Running" ]]; then return 0; fi
     sleep 5
     elapsed=$((elapsed + 5))
   done

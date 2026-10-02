@@ -29,19 +29,9 @@ data:
           path: /var/tempo/traces
         wal:
           path: /var/tempo/wal
-    metrics_generator:
-      registry:
-        external_labels:
-          source: tempo
-      storage:
-        path: /var/tempo/generator/wal
-        remote_write:
-          - url: http://kube-prometheus-stack-prometheus.monitoring.svc:9090/api/v1/write
-            send_exemplars: true
-    overrides:
-      defaults:
-        metrics_generator:
-          processors: [service-graphs, span-metrics]
+    # Span metrics and service graphs are generated once by the central
+    # Collector. Keeping Tempo's generator disabled avoids duplicate series
+    # and does not require Prometheus's remote-write receiver.
 ---
 apiVersion: apps/v1
 kind: Deployment

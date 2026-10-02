@@ -23,7 +23,7 @@ spec:
     spec:
       containers:
         - name: app
-          image: otel-poc/llm-mock:dev
+          image: otel-poc/llm-mock:work-20261002053536
           imagePullPolicy: IfNotPresent
           ports:
             - name: http
@@ -79,7 +79,7 @@ spec:
       serviceAccountName: poc-apps
       containers:
         - name: app
-          image: otel-poc/python-llm:dev
+          image: otel-poc/python-llm:work-20261002053536
           imagePullPolicy: IfNotPresent
           env:
             - name: DB_DSN
@@ -95,6 +95,8 @@ spec:
               value: mock-gpt
             - name: LLM_PROFILE
               value: mock
+            - name: DB_STATEMENT_TIMEOUT_MS
+              value: "5000"
           ports:
             - name: http
               containerPort: 8080
@@ -156,7 +158,7 @@ spec:
       serviceAccountName: poc-apps
       containers:
         - name: app
-          image: otel-poc/python-analysis:dev
+          image: otel-poc/python-analysis:work-20261002053536
           imagePullPolicy: IfNotPresent
           env:
             - name: DB_DSN
@@ -166,6 +168,10 @@ spec:
                   key: uri
             - name: LLM_BASE_URL
               value: http://toxiproxy-llm:8080
+            - name: LLM_REQUEST_TIMEOUT
+              value: "35"
+            - name: DB_STATEMENT_TIMEOUT_MS
+              value: "5000"
           ports:
             - name: http
               containerPort: 8080
@@ -227,7 +233,7 @@ spec:
       serviceAccountName: poc-apps
       containers:
         - name: app
-          image: otel-poc/java-api:dev
+          image: otel-poc/java-api:work-20261002053536
           imagePullPolicy: IfNotPresent
           env:
             - name: DB_USER

@@ -5,6 +5,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "10"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -15,6 +17,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -25,6 +30,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "30"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -43,6 +50,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: otel-poc-cnpg-system
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -54,6 +64,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "30"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -73,6 +85,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: otel-poc-system
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
       - ServerSideApply=true
@@ -84,6 +99,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "40"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -94,6 +111,9 @@ spec:
     server: https://kubernetes.default.svc
     namespace: otel-poc-observability
   syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
     syncOptions:
       - CreateNamespace=true
 ---
@@ -104,6 +124,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "50"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -113,6 +135,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: otel-poc-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -121,6 +147,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "50"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -130,6 +158,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: otel-poc-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -138,6 +170,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "70"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -147,6 +181,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: otel-poc-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -155,6 +193,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "60"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -164,6 +204,10 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: otel-poc-apps
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
 ---
 apiVersion: argoproj.io/v1alpha1
 kind: Application
@@ -172,6 +216,8 @@ metadata:
   namespace: argocd
   annotations:
     poc.otel/bootstrap-order: "80"
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -181,3 +227,7 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: otel-poc-observability
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

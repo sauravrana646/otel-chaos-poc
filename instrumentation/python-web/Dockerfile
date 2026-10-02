@@ -4,5 +4,4 @@ WORKDIR /autoinstrumentation
 COPY requirements.txt .
 RUN pip install --upgrade pip \
   && pip install --no-cache-dir -r requirements.txt -t /autoinstrumentation \
-  && pip install --no-cache-dir opentelemetry-distro -t /autoinstrumentation \
-  && PYTHONPATH=/autoinstrumentation python -c "import opentelemetry; print(opentelemetry.__file__)"
+  && PYTHONPATH=/autoinstrumentation python -c "import importlib.metadata as m; import opentelemetry; assert m.version('opentelemetry-distro') == '0.51b0'; print(opentelemetry.__file__)"

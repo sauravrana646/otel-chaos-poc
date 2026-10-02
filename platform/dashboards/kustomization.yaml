@@ -20,3 +20,6 @@ configMapGenerator:
   - name: otel-poc-dashboard-scenario
     files:
       - otel-poc-scenario.json=scenario-comparison.json
+  - name: otel-poc-dashboard-llm-genai
+    files:
+      - otel-poc-llm-genai.json=llm-genai.json

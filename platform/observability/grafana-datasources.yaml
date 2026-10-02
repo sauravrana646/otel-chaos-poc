@@ -4,7 +4,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: otel-poc-datasources
-  namespace: otel-poc-observability
+  namespace: monitoring
   labels:
     grafana_datasource: "1"
 data:

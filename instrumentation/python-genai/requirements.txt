@@ -1,3 +1,12 @@
-# Prefer requirements-genai.txt + web requirements during docker build from instrumentation/.
-# Kept for local pip installs / documentation.
+# Single pinned set — install once with -t so namespace packages are not clobbered.
+opentelemetry-distro==0.51b0
+opentelemetry-exporter-otlp==1.30.0
+opentelemetry-instrumentation==0.51b0
+opentelemetry-instrumentation-fastapi==0.51b0
+opentelemetry-instrumentation-asgi==0.51b0
+opentelemetry-instrumentation-httpx==0.51b0
+opentelemetry-instrumentation-psycopg==0.51b0
+opentelemetry-instrumentation-logging==0.51b0
 opentelemetry-instrumentation-openai-v2==2.1b0
+# openai_v2.utils imports httpx at load time (app also has it; pin for image self-test).
+httpx==0.28.1

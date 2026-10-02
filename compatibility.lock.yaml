@@ -1,88 +1,69 @@
-# Compatibility lock
+schema_version: 1
+validated_on: null
+target:
+  runtime: orbstack
+  architecture: arm64
+  kubernetes_context: orbstack
+  storage_class: local-path
+  prometheus_monitor_label:
+    release: kube-prometheus-stack
 
-Pinned versions for the OrbStack POC. Update only after validating on the target cluster.
-Image digests are filled by `./cli/poc build` / Phase A verification.
+prerequisites:
+  argocd:
+    required: true
+    namespace: argocd
+  grafana:
+    required: true
+    namespace: monitoring
+  prometheus:
+    required: true
+    namespace: monitoring
+  cert_manager:
+    required: true
+    crd: certificates.cert-manager.io
 
-## Cluster assumptions
+components:
+  cloudnativepg:
+    chart_repository: https://cloudnative-pg.github.io/charts
+    chart: cloudnative-pg
+    chart_version: 0.26.0
+    postgres_image: ghcr.io/cloudnative-pg/postgresql:17
+  opentelemetry_operator:
+    chart_repository: https://open-telemetry.github.io/opentelemetry-helm-charts
+    chart: opentelemetry-operator
+    chart_version: 0.86.0
+    java_agent_image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:2.13.1
+  collector:
+    image: otel/opentelemetry-collector-contrib:0.120.0
+  tempo:
+    image: grafana/tempo:2.7.1
+  loki:
+    image: grafana/loki:3.4.2
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.9.0
+  k6:
+    minimum_version: 0.50.0
 
-| Item | Value |
-|------|-------|
-| Target runtime | OrbStack Kubernetes (ARM64) |
-| Observed K8s (planning) | v1.35.6+orb1 — recheck with `poc doctor` |
-| Storage class | local-path |
-| Existing GitOps | Argo CD (planning: v3.4.6) |
-| Existing Grafana | planning: 12.0.0 |
-| Prometheus label for monitors | `release: kube-prometheus-stack` |
+application_runtimes:
+  java: "21"
+  python: "3.12"
+  postgresql: "17"
 
-## Operators and charts
+python_instrumentation:
+  opentelemetry_api: 1.30.0
+  opentelemetry_instrumentation: 0.51b0
+  openai_instrumentation: 2.1b0
 
-| Component | Chart / source | Version (pin) | Notes |
-|-----------|----------------|---------------|-------|
-| CloudNativePG | cloudnative-pg/cloudnative-pg | 0.26.0 (chart) / operator 1.30.x | Confirm K8s 1.35 matrix at implement time |
-| OpenTelemetry Operator | open-telemetry/opentelemetry-operator | 0.86.0 (chart) / align with operator release | Restrict webhook to POC namespace |
-| cert-manager | jetstack/cert-manager | 1.17.2 | Reuse cluster install if present |
-| Tempo | grafana/tempo | 1.18.0 | Single binary / single instance |
-| Loki | grafana/loki | 6.27.0 | Single-binary mode |
-| OTel Collector | open-telemetry/opentelemetry-collector | 0.110.0 | Central deployment |
-| Toxiproxy | shopify/toxiproxy | 2.9.0 | App-namespace Deployment |
+local_images:
+  tag: work-20261002053536
+  images:
+    java_api: otel-poc/java-api:work-20261002053536
+    python_analysis: otel-poc/python-analysis:work-20261002053536
+    python_llm: otel-poc/python-llm:work-20261002053536
+    llm_mock: otel-poc/llm-mock:work-20261002053536
+    python_instrumentation_web: otel-poc/python-instrumentation-web:work-20261002053536
+    python_instrumentation_genai: otel-poc/python-instrumentation-genai:work-20261002053536
 
-> Chart versions above are starting pins for Phase A. Replace with the exact chart+app versions that pass `poc doctor` / bootstrap on your cluster and commit the update.
-
-## Application runtimes
-
-| App | Base | Notes |
-|-----|------|-------|
-| java-api | eclipse-temurin:21-jre | Spring Boot 3.4.x |
-| python-analysis | python:3.12-slim (glibc) | FastAPI, HTTPX, psycopg |
-| python-llm | python:3.12-slim (glibc) | FastAPI, OpenAI SDK, psycopg |
-| llm-mock | python:3.12-slim (glibc) | OpenAI-compatible mock |
-
-## Instrumentation
-
-| Profile | Image | Pin |
-|---------|-------|-----|
-| java | ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java | Fill digest after Phase A |
-| python-web | local `otel-poc/python-instrumentation-web` | Built from `instrumentation/python-web` |
-| python-genai | local `otel-poc/python-instrumentation-genai` | web + opentelemetry-instrumentation-genai-openai |
-
-### Python package set (starting)
-
-```text
-opentelemetry-distro
-opentelemetry-exporter-otlp
-opentelemetry-instrumentation-fastapi
-opentelemetry-instrumentation-httpx
-opentelemetry-instrumentation-psycopg
-opentelemetry-instrumentation-logging
-opentelemetry-instrumentation-genai-openai   # genai profile only
-```
-
-Pin exact versions in each instrumentation `requirements.txt` after a successful injection smoke.
-
-## Database
-
-| Item | Value |
-|------|-------|
-| PostgreSQL | 17 (CloudNativePG image) |
-| Instances | 1 |
-| PVC | 2 GiB, local-path |
-| Database name | poc |
-| RW service | poc-postgres-rw |
-
-## Local image tags (filled by build)
-
-| Image | Tag | Digest |
-|-------|-----|--------|
-| otel-poc/java-api | TBD | |
-| otel-poc/python-analysis | TBD | |
-| otel-poc/python-llm | TBD | |
-| otel-poc/llm-mock | TBD | |
-| otel-poc/python-instrumentation-web | TBD | |
-| otel-poc/python-instrumentation-genai | TBD | |
-
-## Observability PVC sizing
-
-| Component | Size | Retention target |
-|-----------|------|------------------|
-| Tempo | 5 GiB | ~24h |
-| Loki | 5 GiB | ~24h |
+validation:
+  status: pending
+  notes: Run ./cli/poc doctor and ./tests/static/verify.sh after every pin change.

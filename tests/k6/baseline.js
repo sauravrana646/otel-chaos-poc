@@ -1,6 +1,6 @@
 import http from 'k6/http';
 import { check, sleep } from 'k6';
-import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
+import exec from 'k6/execution';
 
 // Target via kubectl port-forward or OrbStack service URL.
 const BASE = __ENV.JAVA_API_BASE || 'http://127.0.0.1:8080';
@@ -17,6 +17,7 @@ export const options = {
     },
   },
   thresholds: {
+    checks: ['rate>0.99'],
     http_req_failed: ['rate<0.01'],
     http_req_duration: ['p(95)<1000'],
     dropped_iterations: ['count==0'],
@@ -24,7 +25,7 @@ export const options = {
 };
 
 export default function () {
-  const requestId = `k6-${uuidv4()}`;
+  const requestId = `k6-${Date.now()}-${exec.vu.idInTest}-${exec.scenario.iterationInTest}`;
   const payload = JSON.stringify({
     request_id: requestId,
     item_id: 'item-100',

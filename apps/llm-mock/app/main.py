@@ -17,6 +17,7 @@ APP = FastAPI(title="llm-mock", version="0.1.0")
 
 _lock = threading.Lock()
 _fail_then_success: dict[str, int] = defaultdict(int)
+_attempts: dict[str, int] = defaultdict(int)
 _state = {
     "delay_ms": 50,
     "mode": "normal",  # normal | fail-then-success | persistent-429 | persistent-503
@@ -49,6 +50,7 @@ def readyz() -> dict[str, str]:
 def admin_reset() -> dict[str, str]:
     with _lock:
         _fail_then_success.clear()
+        _attempts.clear()
         _state["delay_ms"] = 50
         _state["mode"] = "normal"
     return {"status": "reset"}
@@ -67,6 +69,12 @@ def admin_config(body: dict[str, Any]) -> dict[str, Any]:
         return dict(_state)
 
 
+@APP.get("/admin/stats/{request_id}")
+def admin_stats(request_id: str) -> dict[str, int]:
+    with _lock:
+        return {"attempts": _attempts[request_id]}
+
+
 @APP.post("/v1/chat/completions")
 async def chat_completions(
     body: ChatCompletionRequest,
@@ -78,6 +86,7 @@ async def chat_completions(
     scenario = x_poc_scenario or "normal"
 
     with _lock:
+        _attempts[request_id] += 1
         delay_ms = int(_state["delay_ms"])
         mode = _state["mode"]
         if scenario == "retry-success":

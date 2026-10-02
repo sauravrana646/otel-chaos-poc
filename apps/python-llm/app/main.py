@@ -25,6 +25,7 @@ PROFILE = os.getenv("LLM_PROFILE", "mock")  # mock | openrouter
 MAX_ATTEMPTS = 1 if PROFILE == "openrouter" else 3
 ATTEMPT_TIMEOUT = 30.0 if PROFILE == "openrouter" else 2.0
 BACKOFF_MS = (100, 200)
+DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 
 
 class GenerateRequest(BaseModel):
@@ -49,7 +50,7 @@ def healthz() -> dict[str, str]:
 
 @APP.get("/readyz")
 def readyz() -> dict[str, str]:
-    with psycopg.connect(DB_DSN, connect_timeout=2) as conn:
+    with _connect_db() as conn:
         conn.execute("SELECT 1")
     return {"status": "ready"}
 
@@ -79,15 +80,24 @@ def generate(body: GenerateRequest) -> GenerateResponse:
     for attempt in range(1, MAX_ATTEMPTS + 1):
         try:
             extra_headers = {"X-Request-Id": body.request_id, "X-POC-Scenario": body.scenario}
+            streaming = body.scenario == "stream"
             resp = client.chat.completions.create(
                 model=PROVIDER_MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=128,
                 extra_headers=extra_headers,
+                stream=streaming,
             )
-            choice = resp.choices[0].message.content or ""
-            completion_text = choice
-            model_name = resp.model or PROVIDER_MODEL
+            if streaming:
+                parts: list[str] = []
+                for chunk in resp:
+                    model_name = chunk.model or model_name
+                    if chunk.choices and chunk.choices[0].delta.content:
+                        parts.append(chunk.choices[0].delta.content)
+                completion_text = "".join(parts).strip()
+            else:
+                completion_text = resp.choices[0].message.content or ""
+                model_name = resp.model or PROVIDER_MODEL
             last_error = None
             break
         except (APIStatusError, APIConnectionError) as exc:
@@ -115,7 +125,7 @@ def _retryable(exc: Exception) -> bool:
 
 
 def _read_existing(request_id: str) -> dict[str, Any] | None:
-    with psycopg.connect(DB_DSN, connect_timeout=2) as conn:
+    with _connect_db() as conn:
         row = conn.execute(
             "SELECT result_text, model_name FROM recommendations WHERE request_id = %s",
             (request_id,),
@@ -126,7 +136,7 @@ def _read_existing(request_id: str) -> dict[str, Any] | None:
 
 
 def _persist(request_id: str, item_id: str, result: str, model: str) -> None:
-    with psycopg.connect(DB_DSN, connect_timeout=2) as conn:
+    with _connect_db() as conn:
         conn.execute(
             """
             INSERT INTO recommendations (request_id, item_id, result_text, model_name)
@@ -136,3 +146,12 @@ def _persist(request_id: str, item_id: str, result: str, model: str) -> None:
             (request_id, item_id, result, model),
         )
         conn.commit()
+
+
+def _connect_db() -> psycopg.Connection[Any]:
+    """Bound both connection establishment and statements for fault scenarios."""
+    return psycopg.connect(
+        DB_DSN,
+        connect_timeout=2,
+        options=f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}",
+    )

@@ -17,6 +17,8 @@ DB_DSN = os.getenv(
     "postgresql://poc_app:poc_app@toxiproxy:5432/poc",
 )
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://toxiproxy-llm:8080")
+LLM_REQUEST_TIMEOUT = float(os.getenv("LLM_REQUEST_TIMEOUT", "35"))
+DB_STATEMENT_TIMEOUT_MS = int(os.getenv("DB_STATEMENT_TIMEOUT_MS", "5000"))
 ALLOWED_SCENARIOS = {"normal", "slow-db", "retry-success", "retry-exhaust", "stream"}
 
 
@@ -41,7 +43,7 @@ def healthz() -> dict[str, str]:
 
 @APP.get("/readyz")
 def readyz() -> dict[str, str]:
-    with psycopg.connect(DB_DSN, connect_timeout=2) as conn:
+    with _connect_db() as conn:
         conn.execute("SELECT 1")
     return {"status": "ready"}
 
@@ -62,7 +64,7 @@ def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
     }
 
     try:
-        with httpx.Client(base_url=LLM_BASE_URL, timeout=10.0) as client:
+        with httpx.Client(base_url=LLM_BASE_URL, timeout=LLM_REQUEST_TIMEOUT) as client:
             resp = client.post("/generate", json=payload)
     except httpx.HTTPError as exc:
         raise HTTPException(status_code=502, detail=f"llm dependency unavailable: {exc}") from exc
@@ -79,7 +81,7 @@ def analyze(body: AnalyzeRequest) -> AnalyzeResponse:
 
 
 def _load_context(item_id: str, scenario: str) -> str:
-    with psycopg.connect(DB_DSN, connect_timeout=2) as conn:
+    with _connect_db() as conn:
         if scenario == "slow-db":
             conn.execute("SELECT pg_sleep(0.5)")
         row = conn.execute(
@@ -89,3 +91,11 @@ def _load_context(item_id: str, scenario: str) -> str:
     if row is None:
         raise HTTPException(status_code=404, detail="unknown item context")
     return str(row[0])
+
+
+def _connect_db() -> psycopg.Connection[Any]:
+    return psycopg.connect(
+        DB_DSN,
+        connect_timeout=2,
+        options=f"-c statement_timeout={DB_STATEMENT_TIMEOUT_MS}",
+    )

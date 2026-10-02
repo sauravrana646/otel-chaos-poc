@@ -6,6 +6,8 @@ metadata:
   namespace: argocd
   finalizers:
     - resources-finalizer.argocd.argoproj.io
+  labels:
+    app.kubernetes.io/part-of: otel-chaos-poc
 spec:
   project: otel-chaos-poc
   source:
@@ -16,4 +18,6 @@ spec:
     server: https://kubernetes.default.svc
     namespace: argocd
   syncPolicy:
-    automated: null
+    automated:
+      prune: true
+      selfHeal: true

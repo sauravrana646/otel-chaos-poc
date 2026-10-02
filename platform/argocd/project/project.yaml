@@ -20,6 +20,8 @@ spec:
       server: https://kubernetes.default.svc
     - namespace: otel-poc-tests
       server: https://kubernetes.default.svc
+    - namespace: monitoring
+      server: https://kubernetes.default.svc
     - namespace: argocd
       server: https://kubernetes.default.svc
   clusterResourceWhitelist:

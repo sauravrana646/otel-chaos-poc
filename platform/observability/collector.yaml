@@ -22,6 +22,15 @@ data:
           - key: deployment.environment
             value: poc
             action: upsert
+      filter/drop_health:
+        error_mode: ignore
+        traces:
+          span:
+            - 'attributes["http.route"] == "/healthz"'
+            - 'attributes["http.route"] == "/readyz"'
+            - 'IsMatch(attributes["http.route"], "^/actuator.*")'
+            - 'attributes["url.path"] == "/healthz"'
+            - 'attributes["url.path"] == "/readyz"'
       batch:
         send_batch_size: 512
         timeout: 5s
@@ -56,7 +65,7 @@ data:
       pipelines:
         traces:
           receivers: [otlp]
-          processors: [memory_limiter, resource, batch]
+          processors: [memory_limiter, filter/drop_health, resource, batch]
           exporters: [otlp/tempo, spanmetrics, servicegraph]
         metrics:
           receivers: [otlp, spanmetrics, servicegraph]

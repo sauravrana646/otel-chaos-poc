@@ -1,0 +1,87 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cnpg-log-collector-config
+  namespace: otel-poc-observability
+data:
+  collector.yaml: |
+    receivers:
+      filelog/cnpg:
+        include:
+          - /var/log/pods/otel-poc-apps_poc-postgres-*/*/*.log
+        include_file_path: true
+        start_at: end
+        operators:
+          - type: container
+    processors:
+      resource/cnpg:
+        attributes:
+          - key: service.name
+            value: postgresql
+            action: upsert
+          - key: service.namespace
+            value: otel-poc-apps
+            action: upsert
+          - key: deployment.environment
+            value: poc
+            action: upsert
+      batch:
+        timeout: 5s
+    exporters:
+      otlphttp:
+        endpoint: http://otel-collector.otel-poc-observability.svc:4318
+        tls:
+          insecure: true
+    service:
+      pipelines:
+        logs:
+          receivers: [filelog/cnpg]
+          processors: [resource/cnpg, batch]
+          exporters: [otlphttp]
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: cnpg-log-collector
+  namespace: otel-poc-observability
+  labels:
+    app.kubernetes.io/name: cnpg-log-collector
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: cnpg-log-collector
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: cnpg-log-collector
+    spec:
+      containers:
+        - name: collector
+          image: otel/opentelemetry-collector-contrib:0.120.0
+          args: ["--config=/conf/collector.yaml"]
+          securityContext:
+            runAsUser: 0
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
+          volumeMounts:
+            - name: config
+              mountPath: /conf
+              readOnly: true
+            - name: pod-logs
+              mountPath: /var/log/pods
+              readOnly: true
+      volumes:
+        - name: config
+          configMap:
+            name: cnpg-log-collector-config
+        - name: pod-logs
+          hostPath:
+            path: /var/log/pods
+            type: Directory

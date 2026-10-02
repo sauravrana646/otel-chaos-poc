@@ -66,10 +66,11 @@ cat compatibility.lock.yaml
 ./cli/poc reset
 ```
 
-Destructive teardown of POC namespaces / PVCs is explicit:
+Stateless teardown retains PostgreSQL and observability data. Data deletion is a separate explicit operation:
 
 ```bash
-./cli/poc destroy   # prompts; does not remove shared Argo CD / Grafana / Prometheus
+./cli/poc destroy          # remove stateless POC apps; retain data
+./cli/poc destroy --data   # explicit confirmation; remove POC PVC-backed data
 ```
 
 ## Sample request flow
@@ -101,6 +102,7 @@ Public contract fields: `request_id`, `item_id`, `scenario` (allowlisted). Healt
 - [Architecture](docs/architecture.md)
 - [Design decisions](docs/design-decisions.md)
 - [Implementation plan](docs/implementation-plan.md)
+- [Project walkthrough](docs/project-walkthrough.md)
 - [Compatibility lock](compatibility.lock.yaml)
 
 ## Boundaries
@@ -109,4 +111,4 @@ Single-node development POC. Not a claim of production performance, host HA, rep
 
 ## Status
 
-Initial repository scaffold: applications, platform manifests, tests, CLI stubs, and docs aligned to the implementation plan. Cluster deploy and Phase A compatibility gates still need to be executed against your OrbStack environment.
+Implementation and local validation are present. A clean GitOps bootstrap and the live load/fault acceptance suite still need to pass on a Ready OrbStack node before the POC is considered complete.

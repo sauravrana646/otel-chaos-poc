@@ -1,33 +1,52 @@
 import http from 'k6/http';
 import { check } from 'k6';
-import { uuidv4 } from 'https://jslib.k6.io/k6-utils/1.4.0/index.js';
+import exec from 'k6/execution';
 
 const BASE = __ENV.JAVA_API_BASE || 'http://127.0.0.1:8080';
 
 export const options = {
   scenarios: {
-    spike: {
-      executor: 'ramping-arrival-rate',
-      startRate: 5,
+    warmup: {
+      executor: 'constant-arrival-rate',
+      exec: 'warmup',
+      rate: 5,
       timeUnit: '1s',
-      preAllocatedVUs: 20,
+      duration: '1m',
+      preAllocatedVUs: 10,
+      maxVUs: 30,
+    },
+    spike: {
+      executor: 'constant-arrival-rate',
+      exec: 'spike',
+      startTime: '1m',
+      rate: 50,
+      timeUnit: '1s',
+      duration: '1m',
+      preAllocatedVUs: 50,
       maxVUs: 120,
-      stages: [
-        { target: 5, duration: '1m' },
-        { target: 25, duration: '1m' },
-        { target: 50, duration: '1m' },
-        { target: 5, duration: '1m' },
-      ],
+    },
+    recovery: {
+      executor: 'constant-arrival-rate',
+      exec: 'recovery',
+      startTime: '2m',
+      rate: 5,
+      timeUnit: '1s',
+      duration: '1m',
+      preAllocatedVUs: 10,
+      maxVUs: 30,
     },
   },
   thresholds: {
-    // Soft during spike; verify recovery separately in poc verify / dashboards.
     http_req_failed: ['rate<0.05'],
+    'http_req_failed{scenario:recovery}': ['rate<0.01'],
+    'http_req_duration{scenario:recovery}': ['p(95)<1000'],
+    'checks{scenario:recovery}': ['rate>0.99'],
+    dropped_iterations: ['count==0'],
   },
 };
 
-export default function () {
-  const requestId = `k6-spike-${uuidv4()}`;
+function request(scenario) {
+  const requestId = `k6-spike-${Date.now()}-${exec.vu.idInTest}-${exec.scenario.iterationInTest}`;
   const res = http.post(
     `${BASE}/api/recommendations`,
     JSON.stringify({
@@ -37,8 +56,12 @@ export default function () {
     }),
     {
       headers: { 'Content-Type': 'application/json' },
-      tags: { name: 'recommendations', scenario: 'spike' },
+      tags: { name: 'recommendations', scenario },
     },
   );
   check(res, { 'status 200': (r) => r.status === 200 });
 }
+
+export function warmup() { request('warmup'); }
+export function spike() { request('spike'); }
+export function recovery() { request('recovery'); }

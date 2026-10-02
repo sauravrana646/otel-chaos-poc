@@ -24,6 +24,7 @@ spec:
     parameters:
       log_min_duration_statement: "250"
   monitoring:
+    # The explicit PodMonitor below carries the shared stack's required label.
     enablePodMonitor: false
   resources:
     requests:

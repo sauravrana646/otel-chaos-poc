@@ -282,7 +282,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=~\"java-api|python-analysis|python-llm\",http_route!~\"/healthz|/readyz|/actuator.*\"}[1m])) by (service_name)",
+          "expr": "sum(rate(http_server_request_duration_seconds_count{service_name=~\"java-api|python-analysis|python-llm\",http_route!~\"/healthz|/readyz|/actuator.*\"}[1m])) by (service_name) or sum(rate(http_server_duration_milliseconds_count{service_name=~\"python-analysis|python-llm\",http_route!~\"/healthz|/readyz\"}[1m])) by (service_name)",
           "legendFormat": "{{service_name}}",
           "datasource": {
             "type": "prometheus",
@@ -333,7 +333,7 @@
       "targets": [
         {
           "refId": "A",
-          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=~\"java-api|python-analysis|python-llm\",http_route!~\"/healthz|/readyz|/actuator.*\"}[1m])) by (le, service_name))",
+          "expr": "histogram_quantile(0.95, sum(rate(http_server_request_duration_seconds_bucket{service_name=~\"java-api|python-analysis|python-llm\",http_route!~\"/healthz|/readyz|/actuator.*\"}[1m])) by (le, service_name)) or histogram_quantile(0.95, sum(rate(http_server_duration_milliseconds_bucket{service_name=~\"python-analysis|python-llm\",http_route!~\"/healthz|/readyz\"}[1m])) by (le, service_name)) / 1000",
           "legendFormat": "{{service_name}}",
           "datasource": {
             "type": "prometheus",

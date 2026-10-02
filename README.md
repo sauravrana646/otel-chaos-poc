@@ -31,6 +31,7 @@ compatibility.lock.yaml
 - OrbStack Kubernetes (ARM64), ~**12 GiB** memory recommended
 - Existing cluster components reused by this POC: **Argo CD**, **Grafana**, **Prometheus** (kube-prometheus-stack)
 - Docker (OrbStack) for local ARM64 image builds
+- Argo CD repository credentials for this repository when it is private; configure them as an Argo CD repository Secret or through the Argo CD UI, and keep the credential outside Git
 - Optional: OpenRouter API key + model ID for real-model smoke
 
 Recheck cluster state before changing anything:
@@ -111,4 +112,4 @@ Single-node development POC. Not a claim of production performance, host HA, rep
 
 ## Status
 
-Implementation and local validation are present. A clean GitOps bootstrap and the live load/fault acceptance suite still need to pass on a Ready OrbStack node before the POC is considered complete.
+The pinned stack has passed a clean Argo CD reconciliation and the normal, retry-success, retry-exhaust, and streaming trace assertions on OrbStack. The k6 load and Toxiproxy fault acceptance suite remains a separate, intentionally disruptive validation step.

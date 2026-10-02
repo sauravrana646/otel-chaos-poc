@@ -1,5 +1,5 @@
 schema_version: 1
-validated_on: null
+validated_on: "2026-10-02"
 target:
   runtime: orbstack
   architecture: arm64
@@ -65,5 +65,5 @@ local_images:
     python_instrumentation_genai: otel-poc/python-instrumentation-genai:work-20261002053536
 
 validation:
-  status: pending
-  notes: Run ./cli/poc doctor and ./tests/static/verify.sh after every pin change.
+  status: gitops-and-smoke-passed
+  notes: Argo CD reconciliation and normal, retry-success, retry-exhaust, and streaming trace assertions passed on OrbStack; load and fault acceptance remain separate.

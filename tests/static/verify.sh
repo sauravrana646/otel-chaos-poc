@@ -35,6 +35,8 @@ fi
 ! grep -Fq '"revision":"HEAD"' cli/poc
 grep -Fq "'{\"operation\":null}'" cli/poc
 ! grep -Fq 'toxic remove postgres all' cli/poc
+! grep -Fq 'toxic list' cli/poc
+grep -Fq 'toxiproxy inspect "$proxy"' cli/poc
 ! grep -Fq 'metrics_generator:' platform/observability/tempo.yaml
 ! grep -Fq 'pip install --no-cache-dir opentelemetry-distro -t /autoinstrumentation' instrumentation/python-web/Dockerfile
 grep -Fq 'namespace: monitoring' platform/observability/grafana-datasources.yaml

@@ -514,11 +514,19 @@ cmd_fault() {
 }
 
 remove_toxic_if_present() {
-  local proxy="$1" toxic="$2"
-  if toxiproxy toxic list "$proxy" | grep -Fq "$toxic"; then
+  local proxy="$1" toxic="$2" inspected
+  if ! inspected="$(toxiproxy inspect "$proxy")"; then
+    echo "failed to inspect Toxiproxy proxy ${proxy}" >&2
+    return 1
+  fi
+  if printf '%s\n' "$inspected" | grep -Fq "$toxic"; then
     toxiproxy toxic remove --toxicName "$toxic" "$proxy"
   fi
-  if toxiproxy toxic list "$proxy" | grep -Fq "$toxic"; then
+  if ! inspected="$(toxiproxy inspect "$proxy")"; then
+    echo "failed to verify Toxiproxy proxy ${proxy}" >&2
+    return 1
+  fi
+  if printf '%s\n' "$inspected" | grep -Fq "$toxic"; then
     echo "failed to remove toxic ${toxic} from ${proxy}" >&2
     return 1
   fi

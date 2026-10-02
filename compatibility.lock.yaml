@@ -31,7 +31,7 @@ components:
   opentelemetry_operator:
     chart_repository: https://open-telemetry.github.io/opentelemetry-helm-charts
     chart: opentelemetry-operator
-    chart_version: 0.86.0
+    chart_version: 0.124.0
     java_agent_image: ghcr.io/open-telemetry/opentelemetry-operator/autoinstrumentation-java:2.13.1
   collector:
     image: otel/opentelemetry-collector-contrib:0.120.0
